@@ -178,6 +178,42 @@ export function AnalyticsDashboard({
           </div>
 
           <div className="chart-card lg:col-span-2">
+            <h3 className="chart-title">Top phrases</h3>
+            {snapshot.topPhrases.length === 0 ? (
+              <p className="text-sm text-zinc-500">No recurring phrases detected yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-zinc-300">
+                  <thead>
+                    <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.15em] text-zinc-500">
+                      <th className="pb-3 pr-4 font-normal">Phrase</th>
+                      <th className="pb-3 pr-4 font-normal">Frequency</th>
+                      <th className="pb-3 pr-4 font-normal">Trend</th>
+                      <th className="pb-3 pr-4 font-normal">Last seen</th>
+                      <th className="pb-3 font-normal">Top emotion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snapshot.topPhrases.map((phrase) => (
+                      <tr key={phrase.label} className="border-b border-white/5 last:border-0">
+                        <td className="py-2.5 pr-4 font-medium text-white">{phrase.label}</td>
+                        <td className="py-2.5 pr-4 text-zinc-400">{phrase.count}</td>
+                        <td className="py-2.5 pr-4">
+                          <span className={phrase.trend === "up" ? "text-emerald-400" : "text-zinc-500"}>
+                            {phrase.trend === "up" ? "↑" : "—"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4 text-zinc-400">{phrase.lastSeen || "—"}</td>
+                        <td className="py-2.5 text-zinc-400">{phrase.topEmotion ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="chart-card lg:col-span-2">
             <h3 className="chart-title">Recurring entities & correlations</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <ul className="space-y-3 text-sm text-zinc-300">
