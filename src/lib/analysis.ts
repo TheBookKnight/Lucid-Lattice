@@ -9,6 +9,7 @@ import {
   type DraftEntry,
   type Entry,
   type ExtractedEntity,
+  type PhraseMetric,
   type Timeframe,
 } from "@/types/journal";
 
@@ -116,6 +117,40 @@ export function extractEntities(text: string): ExtractedEntity[] {
   });
 }
 
+const phraseStopWords = new Set([
+  ...Array.from(stopWordSet),
+  ...Array.from(fillerWords),
+]);
+
+function isAllStopWords(phrase: string): boolean {
+  return phrase.split(/\s+/).every((word) => phraseStopWords.has(word));
+}
+
+export function extractPhrases(text: string): string[] {
+  const doc = nlp(text);
+
+  const candidates: string[] = [
+    ...(doc.nouns().out("array") as string[]),
+    ...(doc.match("#Adjective+ #Noun+").out("array") as string[]),
+    ...(doc.match("#Noun #Noun+").out("array") as string[]),
+  ];
+
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  for (const raw of candidates) {
+    const phrase = raw.toLowerCase().trim().replace(/\s+/g, " ");
+    const words = phrase.split(" ");
+    if (words.length < 2) continue;
+    if (isAllStopWords(phrase)) continue;
+    if (seen.has(phrase)) continue;
+    seen.add(phrase);
+    results.push(phrase);
+  }
+
+  return results;
+}
+
 function applyTimeframe(entries: Entry[], timeframe: Timeframe): Entry[] {
   if (timeframe === "all") {
     return entries;
@@ -181,6 +216,26 @@ export function buildAnalysis(entries: Entry[], filters: AnalysisFilters = defau
   const entryTexts = filteredEntries.map(getEntryText);
   const wordCounts = collectCounts(entryTexts.flatMap(tokenizeText)).slice(0, 8);
 
+  const phraseCounts = collectCounts(entryTexts.flatMap(extractPhrases)).slice(0, 8);
+
+  const halfCount = Math.ceil(filteredEntries.length / 2);
+  const recentEntries = filteredEntries.slice(0, halfCount);
+  const recentPhraseSet = new Set(recentEntries.flatMap((entry) => extractPhrases(getEntryText(entry))));
+
+  const topPhrases: PhraseMetric[] = phraseCounts.map(({ label, count }) => {
+    const lastEntry = filteredEntries.find((entry) => extractPhrases(getEntryText(entry)).includes(label));
+    const topEmotion =
+      lastEntry?.emotions.sort((a, b) => b.intensity - a.intensity)[0]?.emotion ?? null;
+
+    return {
+      label,
+      count,
+      trend: recentPhraseSet.has(label) ? "up" : "stable",
+      lastSeen: lastEntry?.createdAt.slice(0, 10) ?? "",
+      topEmotion,
+    };
+  });
+
   const recurringEntities = collectCounts(
     filteredEntries.flatMap((entry) => entry.extractedEntities.map((entity) => `${entity.type}:${entity.normalizedValue}`)),
   )
@@ -219,6 +274,7 @@ export function buildAnalysis(entries: Entry[], filters: AnalysisFilters = defau
     timeframe: filters.timeframe,
     totalEntries: filteredEntries.length,
     topWords: wordCounts,
+    topPhrases,
     recurringEntities,
     emotionalTrends: buildEmotionTrends(filteredEntries),
     correlations: emotionTotals.length > 0 ? emotionTotals : correlations,

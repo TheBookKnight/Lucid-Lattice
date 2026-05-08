@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAnalysis, createEmptyDraft, extractEntities, filterEntries, tokenizeText } from "@/lib/analysis";
+import { buildAnalysis, createEmptyDraft, extractEntities, extractPhrases, filterEntries, tokenizeText } from "@/lib/analysis";
 import type { Entry } from "@/types/journal";
 
 const baseEntry: Entry = {
@@ -87,5 +87,64 @@ describe("analysis helpers", () => {
     expect(snapshot.totalEntries).toBe(1);
     expect(snapshot.topWords.some((item) => item.label === "silver")).toBe(true);
     expect(snapshot.correlations.some((item) => item.label === "Fear")).toBe(true);
+  });
+});
+
+describe("extractPhrases", () => {
+  it("returns only multi-word phrases", () => {
+    const phrases = extractPhrases("I saw a silver wolf near the old red church.");
+    for (const phrase of phrases) {
+      expect(phrase.split(" ").length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("normalizes phrases to lowercase", () => {
+    const phrases = extractPhrases("Pacific Ocean and Black Wolf appeared in the dream.");
+    for (const phrase of phrases) {
+      expect(phrase).toBe(phrase.toLowerCase());
+    }
+  });
+
+  it("deduplicates phrases within a text", () => {
+    const phrases = extractPhrases("A silver wolf chased me. The silver wolf appeared again.");
+    const unique = new Set(phrases);
+    expect(unique.size).toBe(phrases.length);
+  });
+
+  it("extracts meaningful noun phrases from dream text", () => {
+    const phrases = extractPhrases("I dreamed of a dark forest and an old church near the frozen river.");
+    expect(phrases.some((p) => p.includes("old church") || p.includes("frozen river") || p.includes("dark forest"))).toBe(true);
+  });
+
+  it("returns empty array for short or stop-word-only text", () => {
+    const phrases = extractPhrases("the and a is");
+    expect(phrases).toHaveLength(0);
+  });
+
+  it("topPhrases included in buildAnalysis snapshot", () => {
+    const entry: Entry = {
+      ...baseEntry,
+      transcript: "A silver wolf stood in the dark forest.",
+      editedTranscript: "A silver wolf stood in the dark forest.",
+      title: "Silver wolf",
+    };
+    const snapshot = buildAnalysis([entry], {
+      timeframe: "all",
+      emotion: "all",
+      minIntensity: 1,
+      entryType: "all",
+      lucidOnly: false,
+      nightmareOnly: false,
+      doubleValencedOnly: false,
+    });
+
+    expect(Array.isArray(snapshot.topPhrases)).toBe(true);
+    for (const phrase of snapshot.topPhrases) {
+      expect(phrase).toHaveProperty("label");
+      expect(phrase).toHaveProperty("count");
+      expect(phrase).toHaveProperty("trend");
+      expect(phrase).toHaveProperty("lastSeen");
+      expect(phrase).toHaveProperty("topEmotion");
+    }
   });
 });

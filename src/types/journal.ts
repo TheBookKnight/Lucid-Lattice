@@ -62,10 +62,17 @@ export interface AnalysisFilters {
   doubleValencedOnly: boolean;
 }
 
+export interface PhraseMetric extends AnalysisMetric {
+  trend: "up" | "down" | "stable";
+  lastSeen: string;
+  topEmotion: string | null;
+}
+
 export interface AnalysisSnapshot {
   timeframe: Timeframe;
   totalEntries: number;
   topWords: AnalysisMetric[];
+  topPhrases: PhraseMetric[];
   recurringEntities: Array<AnalysisMetric & { type: EntityType }>;
   emotionalTrends: Array<Record<string, number | string>>;
   correlations: AnalysisMetric[];
