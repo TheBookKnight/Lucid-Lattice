@@ -1,5 +1,13 @@
+const SCOPE = self.registration.scope;
+const BASE_PATH = new URL(SCOPE).pathname.replace(/\/$/, "");
 const CACHE_NAME = "lucid-lattice-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
+const APP_SHELL = [
+  BASE_PATH + "/",
+  BASE_PATH + "/manifest.webmanifest",
+  BASE_PATH + "/icon-192.png",
+  BASE_PATH + "/icon-512.png",
+  BASE_PATH + "/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

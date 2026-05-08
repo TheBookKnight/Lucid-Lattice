@@ -65,6 +65,46 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `ma
 
 PRs fail automatically if any step fails.
 
+## Deployment
+
+### GitHub Pages
+
+The app deploys automatically to GitHub Pages on every push to `main` via `.github/workflows/deploy.yml`.
+
+#### Enable GitHub Pages (first time only)
+
+1. Go to **Settings → Pages** in this repository.
+2. Set **Source** to **GitHub Actions**.
+3. Save. The next push to `main` will trigger a deployment.
+
+After a successful deployment the app is live at:
+
+```
+https://<your-github-username>.github.io/Lucid-Lattice/
+```
+
+#### How the CI deploy works
+
+On every push to `main`:
+
+1. **Install** — `npm ci`
+2. **Type-check** — `npx tsc --noEmit`
+3. **Lint** — `npm run lint`
+4. **Unit tests** — `npm run test`
+5. **Build** — `npm run build` with `NEXT_PUBLIC_BASE_PATH=/Lucid-Lattice` to produce a static export in `./out`
+6. **Deploy** — the `./out` folder is uploaded as a GitHub Pages artifact and deployed
+
+The workflow requires `pages: write` and `id-token: write` permissions, which are declared in `deploy.yml`.
+
+#### Test the static export locally
+
+```bash
+npm run build                          # generates ./out
+npx serve out                          # serve the exported site locally
+```
+
+Then open `http://localhost:3000`.
+
 ## Mobile install
 ### Android / Chrome
 1. Open the site in Chrome.
