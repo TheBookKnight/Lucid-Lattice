@@ -105,6 +105,68 @@ npx serve out                          # serve the exported site locally
 
 Then open `http://localhost:3000`.
 
+## PWA icons and screenshots
+
+### Icon sizes
+
+All PWA icons live in `public/icons/` and are generated from the master 512×512 source at `public/icon-512.png`.
+
+| File | Size | Purpose |
+|---|---|---|
+| `icon-72x72.png` | 72×72 | any |
+| `icon-96x96.png` | 96×96 | any |
+| `icon-128x128.png` | 128×128 | any |
+| `icon-144x144.png` | 144×144 | any (minimum for Chrome installability) |
+| `icon-152x152.png` | 152×152 | any |
+| `icon-192x192.png` | 192×192 | any |
+| `icon-384x384.png` | 384×384 | any |
+| `icon-512x512.png` | 512×512 | any |
+| `icon-192x192-maskable.png` | 192×192 | maskable (safe-area padded) |
+| `icon-512x512-maskable.png` | 512×512 | maskable (safe-area padded) |
+
+### Regenerate icons
+
+Requires Python 3 with Pillow installed (`pip install Pillow`):
+
+```python
+from PIL import Image
+import os
+
+src = "public/icon-512.png"
+out = "public/icons"
+os.makedirs(out, exist_ok=True)
+original = Image.open(src).convert("RGBA")
+
+for size in [72, 96, 128, 144, 152, 192, 384, 512]:
+    original.resize((size, size), Image.LANCZOS).save(f"{out}/icon-{size}x{size}.png")
+
+# Maskable — 10% safe-area padding on each side
+for size in [192, 512]:
+    canvas = Image.new("RGBA", (size, size), (5, 8, 22, 255))
+    inner_size = int(size * 0.8)
+    inner = original.resize((inner_size, inner_size), Image.LANCZOS)
+    offset = (size - inner_size) // 2
+    canvas.paste(inner, (offset, offset), inner)
+    canvas.save(f"{out}/icon-{size}x{size}-maskable.png")
+```
+
+### Screenshots
+
+Screenshots for the richer install UI live in `public/screenshots/`:
+
+| File | Dimensions | Use |
+|---|---|---|
+| `mobile-home.png` | 390×844 | Mobile install prompt |
+| `desktop-dashboard.png` | 1280×720 | Desktop install prompt (`form_factor: "wide"`) |
+
+Replace these files with real screenshots of the running app for best install-prompt presentation.
+
+### Validating PWA installability
+
+1. Deploy to GitHub Pages (or run `NEXT_PUBLIC_BASE_PATH=/Lucid-Lattice npm run build && npx serve out`).
+2. Open Chrome DevTools → **Application → Manifest** — check for zero errors.
+3. Run **Lighthouse → PWA** audit — all installability checks should pass.
+
 ## Mobile install
 ### Android / Chrome
 1. Open the site in Chrome.
