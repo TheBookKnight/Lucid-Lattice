@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAnalysis, createEmptyDraft, extractEntities, extractPhrases, filterEntries, tokenizeText } from "@/lib/analysis";
+import { buildAnalysis, createEmptyDraft, exportCSV, extractEntities, extractPhrases, filterEntries, tokenizeText } from "@/lib/analysis";
 import type { Entry } from "@/types/journal";
 
 const baseEntry: Entry = {
   id: 1,
-  type: "dream",
   createdAt: new Date().toISOString(),
   transcript: "I saw a silver wolf near the river with Morgan.",
-  editedTranscript: "I saw a silver wolf near the river with Morgan.",
   title: "Silver wolf",
   tags: ["wolf", "river"],
   sleepQuality: 7,
@@ -16,8 +14,8 @@ const baseEntry: Entry = {
   nightmare: false,
   recurringDream: true,
   emotions: [
-    { emotion: "Fear", intensity: 7, doubleValenced: true },
-    { emotion: "Anticipation", intensity: 6, doubleValenced: true },
+    { emotion: "Fear", intensity: 7 },
+    { emotion: "Anticipation", intensity: 6 },
   ],
   notes: "Morgan was calm.",
   extractedEntities: extractEntities("Morgan stood near the river with a silver wolf."),
@@ -26,7 +24,6 @@ const baseEntry: Entry = {
 describe("analysis helpers", () => {
   it("creates a clean default draft", () => {
     expect(createEmptyDraft()).toMatchObject({
-      type: "dream",
       transcript: "",
       sleepQuality: 5,
       emotions: [],
@@ -53,10 +50,9 @@ describe("analysis helpers", () => {
       {
         ...baseEntry,
         id: 2,
-        type: "waking_event",
         lucidDream: false,
         recurringDream: false,
-        emotions: [{ emotion: "Joy", intensity: 5, doubleValenced: false }],
+        emotions: [{ emotion: "Joy", intensity: 5 }],
       },
     ];
 
@@ -65,10 +61,8 @@ describe("analysis helpers", () => {
         timeframe: "all",
         emotion: "Fear",
         minIntensity: 6,
-        entryType: "dream",
         lucidOnly: true,
         nightmareOnly: false,
-        doubleValencedOnly: true,
       }),
     ).toHaveLength(1);
   });
@@ -78,10 +72,8 @@ describe("analysis helpers", () => {
       timeframe: "all",
       emotion: "all",
       minIntensity: 1,
-      entryType: "all",
       lucidOnly: false,
       nightmareOnly: false,
-      doubleValencedOnly: false,
     });
 
     expect(snapshot.totalEntries).toBe(1);
@@ -125,17 +117,14 @@ describe("extractPhrases", () => {
     const entry: Entry = {
       ...baseEntry,
       transcript: "A silver wolf stood in the dark forest.",
-      editedTranscript: "A silver wolf stood in the dark forest.",
       title: "Silver wolf",
     };
     const snapshot = buildAnalysis([entry], {
       timeframe: "all",
       emotion: "all",
       minIntensity: 1,
-      entryType: "all",
       lucidOnly: false,
       nightmareOnly: false,
-      doubleValencedOnly: false,
     });
 
     expect(Array.isArray(snapshot.topPhrases)).toBe(true);
@@ -146,5 +135,29 @@ describe("extractPhrases", () => {
       expect(phrase).toHaveProperty("lastSeen");
       expect(phrase).toHaveProperty("topEmotion");
     }
+  });
+});
+
+describe("exportCSV", () => {
+  it("produces valid CSV with headers and data rows", () => {
+    const csv = exportCSV([baseEntry]);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe("id,createdAt,transcript,summary,emotions,emotionIntensity,topPhrases,reflectiveNotes");
+    expect(lines.length).toBe(2);
+  });
+
+  it("escapes commas and quotes in fields", () => {
+    const entry: Entry = {
+      ...baseEntry,
+      transcript: 'He said, "hello, world"',
+    };
+    const csv = exportCSV([entry]);
+    expect(csv).toContain('""hello');
+  });
+
+  it("handles empty entries array", () => {
+    const csv = exportCSV([]);
+    const lines = csv.split("\n");
+    expect(lines.length).toBe(1);
   });
 });

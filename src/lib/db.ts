@@ -9,7 +9,7 @@ class LucidLatticeDatabase extends Dexie {
   constructor() {
     super("lucid-lattice");
     this.version(1).stores({
-      entries: "++id,type,createdAt,*tags",
+      entries: "++id,createdAt,*tags",
     });
   }
 }
@@ -17,18 +17,16 @@ class LucidLatticeDatabase extends Dexie {
 export const db = new LucidLatticeDatabase();
 
 export async function saveEntry(draft: DraftEntry): Promise<number> {
-  const text = draft.editedTranscript || draft.transcript;
+  const text = draft.transcript;
   const entry: Entry = {
-    type: draft.type,
     createdAt: new Date().toISOString(),
     transcript: draft.transcript.trim(),
-    editedTranscript: draft.editedTranscript.trim(),
     title: draft.title.trim(),
     tags: parseTags(draft.tagsInput),
     sleepQuality: draft.sleepQuality,
-    lucidDream: draft.type === "dream" ? draft.lucidDream : false,
-    nightmare: draft.type === "dream" ? draft.nightmare : false,
-    recurringDream: draft.type === "dream" ? draft.recurringDream : false,
+    lucidDream: draft.lucidDream,
+    nightmare: draft.nightmare,
+    recurringDream: draft.recurringDream,
     emotions: draft.emotions,
     notes: draft.notes.trim(),
     extractedEntities: extractEntities(text),

@@ -34,5 +34,5 @@ jobs:
       - name: Unit & component tests
         run: npm run test
 
-      - name: Build
+      - name: Production build (Cloudflare validation)
         run: npm run build

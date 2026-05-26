@@ -7,13 +7,6 @@ test.describe("App shell", () => {
     await expect(page.getByRole("button", { name: /save dream entry/i })).toBeVisible();
   });
 
-  test("can switch between Dream and Waking experience tabs", async ({ page }) => {
-    await page.goto("/");
-    const wakingTab = page.getByRole("button", { name: /waking experience/i });
-    await wakingTab.click();
-    await expect(page.getByRole("button", { name: /save waking entry/i })).toBeVisible();
-  });
-
   test("shows all eight emotion buttons", async ({ page }) => {
     await page.goto("/");
     const emotions = ["Joy", "Trust", "Fear", "Surprise", "Sadness", "Disgust", "Anger", "Anticipation"];
@@ -33,5 +26,10 @@ test.describe("App shell", () => {
     await page.getByPlaceholder(/describe the dream/i).fill("I dreamed of a silver wolf in a dark forest.");
     await page.getByRole("button", { name: /save dream entry/i }).click();
     await expect(page.getByText(/dream saved offline/i)).toBeVisible();
+  });
+
+  test("shows install guidance for storage persistence", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText(/add lucid lattice to home screen/i)).toBeVisible();
   });
 });

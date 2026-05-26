@@ -6,12 +6,12 @@ import {
   type AnalysisFilters,
   type AnalysisMetric,
   type AnalysisSnapshot,
-  type DraftEntry,
   type Entry,
   type ExtractedEntity,
   type PhraseMetric,
   type Timeframe,
 } from "@/types/journal";
+import type { DraftEntry } from "@/types/journal";
 
 const fillerWords = new Set([
   "um",
@@ -36,17 +36,13 @@ export const defaultFilters: AnalysisFilters = {
   timeframe: "30d",
   emotion: "all",
   minIntensity: 1,
-  entryType: "all",
   lucidOnly: false,
   nightmareOnly: false,
-  doubleValencedOnly: false,
 };
 
-export function createEmptyDraft(type: DraftEntry["type"] = "dream"): DraftEntry {
+export function createEmptyDraft(): DraftEntry {
   return {
-    type,
     transcript: "",
-    editedTranscript: "",
     title: "",
     tagsInput: "",
     sleepQuality: 5,
@@ -65,8 +61,8 @@ export function parseTags(tagsInput: string): string[] {
     .filter(Boolean);
 }
 
-export function getEntryText(entry: Pick<Entry, "editedTranscript" | "transcript" | "notes" | "title">): string {
-  return [entry.title, entry.editedTranscript || entry.transcript, entry.notes]
+export function getEntryText(entry: Pick<Entry, "transcript" | "notes" | "title">): string {
+  return [entry.title, entry.transcript, entry.notes]
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -164,19 +160,11 @@ function applyTimeframe(entries: Entry[], timeframe: Timeframe): Entry[] {
 
 export function filterEntries(entries: Entry[], filters: AnalysisFilters): Entry[] {
   return applyTimeframe(entries, filters.timeframe).filter((entry) => {
-    if (filters.entryType !== "all" && entry.type !== filters.entryType) {
-      return false;
-    }
-
     if (filters.lucidOnly && !entry.lucidDream) {
       return false;
     }
 
     if (filters.nightmareOnly && !entry.nightmare) {
-      return false;
-    }
-
-    if (filters.doubleValencedOnly && !entry.emotions.some((emotion) => emotion.doubleValenced)) {
       return false;
     }
 
@@ -214,9 +202,9 @@ function buildEmotionTrends(entries: Entry[]): AnalysisSnapshot["emotionalTrends
 export function buildAnalysis(entries: Entry[], filters: AnalysisFilters = defaultFilters): AnalysisSnapshot {
   const filteredEntries = filterEntries(entries, filters);
   const entryTexts = filteredEntries.map(getEntryText);
-  const wordCounts = collectCounts(entryTexts.flatMap(tokenizeText)).slice(0, 8);
+  const wordCounts = collectCounts(entryTexts.flatMap(tokenizeText)).slice(0, 30);
 
-  const phraseCounts = collectCounts(entryTexts.flatMap(extractPhrases)).slice(0, 8);
+  const phraseCounts = collectCounts(entryTexts.flatMap(extractPhrases)).slice(0, 30);
 
   const halfCount = Math.ceil(filteredEntries.length / 2);
   const recentEntries = filteredEntries.slice(0, halfCount);
@@ -283,6 +271,34 @@ export function buildAnalysis(entries: Entry[], filters: AnalysisFilters = defau
 
 export function emotionSummary(emotions: Entry["emotions"]): string {
   return emotions
-    .map((emotion) => `${emotion.emotion} ${emotion.intensity}${emotion.doubleValenced ? " • mixed" : ""}`)
+    .map((emotion) => `${emotion.emotion} ${emotion.intensity}`)
     .join(", ");
+}
+
+export function exportCSV(entries: Entry[]): string {
+  const headers = ["id", "createdAt", "transcript", "summary", "emotions", "emotionIntensity", "topPhrases", "reflectiveNotes"];
+  const escapeCSV = (value: string): string => {
+    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  };
+
+  const rows = entries.map((entry) => {
+    const emotions = entry.emotions.map((e) => e.emotion).join("; ");
+    const intensities = entry.emotions.map((e) => `${e.emotion}:${e.intensity}`).join("; ");
+    const phrases = extractPhrases(getEntryText(entry)).slice(0, 5).join("; ");
+    return [
+      String(entry.id ?? ""),
+      entry.createdAt,
+      escapeCSV(entry.transcript),
+      escapeCSV(entry.title),
+      escapeCSV(emotions),
+      escapeCSV(intensities),
+      escapeCSV(phrases),
+      escapeCSV(entry.notes),
+    ].join(",");
+  });
+
+  return [headers.join(","), ...rows].join("\n");
 }
