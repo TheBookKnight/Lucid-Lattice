@@ -1,13 +1,11 @@
-const SCOPE = self.registration.scope;
-const BASE_PATH = new URL(SCOPE).pathname.replace(/\/$/, "");
 const CACHE_NAME = "lucid-lattice-v2";
 const APP_SHELL = [
-  BASE_PATH + "/",
-  BASE_PATH + "/manifest.webmanifest",
-  BASE_PATH + "/icons/icon-192x192.png",
-  BASE_PATH + "/icons/icon-512x512.png",
-  BASE_PATH + "/icons/icon-192x192-maskable.png",
-  BASE_PATH + "/icons/icon-512x512-maskable.png",
+  "/",
+  "/manifest.webmanifest",
+  "/icons/icon-192x192.png",
+  "/icons/icon-512x512.png",
+  "/icons/icon-192x192-maskable.png",
+  "/icons/icon-512x512-maskable.png",
 ];
 
 self.addEventListener("install", (event) => {

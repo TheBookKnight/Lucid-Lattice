@@ -2,15 +2,11 @@
 
 import { useEffect } from "react";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 export function ServiceWorkerRegistration() {
   useEffect(() => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
-      return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js");
     }
-
-    navigator.serviceWorker.register(BASE_PATH + "/sw.js").catch(() => undefined);
   }, []);
 
   return null;
