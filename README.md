@@ -32,6 +32,8 @@ Then open `http://localhost:3000`.
 | `npm run build` | Create a production build |
 | `npm run test` | Run all Vitest unit and component tests |
 | `npm run test:e2e` | Run Playwright end-to-end tests (requires a running dev server or `next build`) |
+| `npm run preview` | Build and preview on local Cloudflare Pages emulator |
+| `npm run deploy` | Build and deploy to Cloudflare Pages |
 
 ## Testing
 
@@ -55,7 +57,7 @@ npm run test:e2e
 ```
 
 ### CI/CD
-A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `main` and on every pull request:
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every pull request to `main`:
 
 1. `npm ci` — install dependencies
 2. `npx tsc --noEmit` — type-check
@@ -67,43 +69,35 @@ PRs fail automatically if any step fails.
 
 ## Deployment
 
-### GitHub Pages
+### Cloudflare Pages
 
-The app deploys automatically to GitHub Pages on every push to `main` via `.github/workflows/deploy.yml`.
+The app deploys automatically to Cloudflare Pages on every push to `main` via `.github/workflows/deploy.yml`.
 
-#### Enable GitHub Pages (first time only)
+#### Setup (first time only)
 
-1. Go to **Settings → Pages** in this repository.
-2. Set **Source** to **GitHub Actions**.
-3. Save. The next push to `main` will trigger a deployment.
+1. Create a Cloudflare Pages project named `lucid-lattice` in the Cloudflare dashboard.
+2. Add the following secrets to this repository (**Settings → Secrets and variables → Actions**):
+   - `CLOUDFLARE_API_TOKEN` — API token with Workers/Pages permissions
+   - `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare account ID
+3. The next push to `main` will trigger a deployment.
 
-After a successful deployment the app is live at:
-
-```
-https://<your-github-username>.github.io/Lucid-Lattice/
-```
-
-#### How the CI deploy works
+#### How the deploy works
 
 On every push to `main`:
 
 1. **Install** — `npm ci`
-2. **Type-check** — `npx tsc --noEmit`
-3. **Lint** — `npm run lint`
-4. **Unit tests** — `npm run test`
-5. **Build** — `npm run build` with `NEXT_PUBLIC_BASE_PATH=/Lucid-Lattice` to produce a static export in `./out`
-6. **Deploy** — the `./out` folder is uploaded as a GitHub Pages artifact and deployed
+2. **Build** — `npx opennextjs-cloudflare build` (runs `next build` then packages for Cloudflare Workers)
+3. **Deploy** — `npx wrangler versions upload` pushes the `.open-next/` output to Cloudflare Pages
 
-The workflow requires `pages: write` and `id-token: write` permissions, which are declared in `deploy.yml`.
+The workflow requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 
-#### Test the static export locally
+#### Preview locally
 
 ```bash
-npm run build                          # generates ./out
-npx serve out                          # serve the exported site locally
+npm run preview                        # builds and runs Cloudflare Pages locally
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:8788`.
 
 ## PWA icons and screenshots
 
@@ -163,7 +157,7 @@ Replace these files with real screenshots of the running app for best install-pr
 
 ### Validating PWA installability
 
-1. Deploy to GitHub Pages (or run `NEXT_PUBLIC_BASE_PATH=/Lucid-Lattice npm run build && npx serve out`).
+1. Deploy to Cloudflare Pages (or run `npm run preview`).
 2. Open Chrome DevTools → **Application → Manifest** — check for zero errors.
 3. Run **Lighthouse → PWA** audit — all installability checks should pass.
 

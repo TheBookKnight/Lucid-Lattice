@@ -4,22 +4,20 @@ import { ServiceWorkerRegistration } from "@/components/service-worker-registrat
 
 import "./globals.css";
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 export const metadata: Metadata = {
   title: "Lucid Lattice",
   description: "An offline-first dream journaling PWA for local capture, emotional tagging, and reflective pattern analysis.",
-  manifest: basePath + "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Lucid Lattice",
   },
   icons: {
-    apple: basePath + "/icons/icon-192x192.png",
+    apple: "/icons/icon-192x192.png",
     icon: [
-      { url: basePath + "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: basePath + "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
     ],
   },
 };

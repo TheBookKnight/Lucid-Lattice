@@ -1,0 +1,9 @@
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Service-Worker-Allowed: /
+
+/*
+  Cross-Origin-Embedder-Policy: credentialless
+  Cross-Origin-Opener-Policy: same-origin
