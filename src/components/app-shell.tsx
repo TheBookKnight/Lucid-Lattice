@@ -55,7 +55,10 @@ export function AppShell() {
 
   const { clearError, errorMessage, isListening, isSupported, start, stop } = useSpeechCapture(onTranscript);
 
-  const saveDisabled = useMemo(() => !draft.transcript.trim(), [draft]);
+  const saveDisabled = useMemo(
+    () => !draft.title.trim() || !draft.transcript.trim() || draft.emotions.length === 0,
+    [draft],
+  );
 
   async function handleRecordToggle() {
     clearError();
