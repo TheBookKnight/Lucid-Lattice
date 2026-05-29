@@ -39,6 +39,37 @@ export async function getEntries(): Promise<Entry[]> {
   return db.entries.orderBy("createdAt").reverse().toArray();
 }
 
+export async function importEntries(entries: Entry[]): Promise<{ imported: number; skipped: number }> {
+  let imported = 0;
+  let skipped = 0;
+
+  for (const entry of entries) {
+    if (entry.id) {
+      const existing = await db.entries.get(entry.id);
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      await db.entries.put(entry);
+    } else {
+      // Check for duplicate by createdAt + transcript
+      const existing = await db.entries
+        .where("createdAt")
+        .equals(entry.createdAt)
+        .filter((e) => e.transcript === entry.transcript)
+        .first();
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      await db.entries.add(entry);
+    }
+    imported++;
+  }
+
+  return { imported, skipped };
+}
+
 export async function clearEntries(): Promise<void> {
   await db.entries.clear();
 }

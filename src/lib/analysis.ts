@@ -6,6 +6,9 @@ import {
   type AnalysisFilters,
   type AnalysisMetric,
   type AnalysisSnapshot,
+  type Emotion,
+  type EmotionTag,
+  type EntityType,
   type Entry,
   type ExtractedEntity,
   type PhraseMetric,
@@ -275,30 +278,191 @@ export function emotionSummary(emotions: Entry["emotions"]): string {
     .join(", ");
 }
 
-export function exportCSV(entries: Entry[]): string {
-  const headers = ["id", "createdAt", "transcript", "summary", "emotions", "emotionIntensity", "topPhrases", "reflectiveNotes"];
-  const escapeCSV = (value: string): string => {
-    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
-  };
+export const CSV_HEADERS = [
+  "id",
+  "createdAt",
+  "transcript",
+  "title",
+  "tags",
+  "sleepQuality",
+  "lucidDream",
+  "nightmare",
+  "recurringDream",
+  "emotions",
+  "notes",
+  "extractedEntities",
+] as const;
 
+export function escapeCSV(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+export function exportCSV(entries: Entry[]): string {
   const rows = entries.map((entry) => {
-    const emotions = entry.emotions.map((e) => e.emotion).join("; ");
-    const intensities = entry.emotions.map((e) => `${e.emotion}:${e.intensity}`).join("; ");
-    const phrases = extractPhrases(getEntryText(entry)).slice(0, 5).join("; ");
+    const emotions = entry.emotions.map((e) => `${e.emotion}:${e.intensity}`).join("; ");
+    const tags = entry.tags.join("; ");
+    const entities = entry.extractedEntities
+      .map((e) => `${e.type}:${e.value}`)
+      .join("; ");
     return [
       String(entry.id ?? ""),
       entry.createdAt,
       escapeCSV(entry.transcript),
       escapeCSV(entry.title),
+      escapeCSV(tags),
+      String(entry.sleepQuality),
+      String(entry.lucidDream),
+      String(entry.nightmare),
+      String(entry.recurringDream),
       escapeCSV(emotions),
-      escapeCSV(intensities),
-      escapeCSV(phrases),
       escapeCSV(entry.notes),
+      escapeCSV(entities),
     ].join(",");
   });
 
-  return [headers.join(","), ...rows].join("\n");
+  return [CSV_HEADERS.join(","), ...rows].join("\n");
+}
+
+export interface ImportResult {
+  entries: Entry[];
+  errors: string[];
+}
+
+function parseCSVRows(csvContent: string): string[][] {
+  const rows: string[][] = [];
+  let current = "";
+  let inQuotes = false;
+  const fields: string[] = [];
+
+  for (let i = 0; i < csvContent.length; i++) {
+    const char = csvContent[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (i + 1 < csvContent.length && csvContent[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ",") {
+        fields.push(current);
+        current = "";
+      } else if (char === "\n" || (char === "\r" && csvContent[i + 1] === "\n")) {
+        if (char === "\r") i++;
+        fields.push(current);
+        current = "";
+        if (fields.some((f) => f.trim())) {
+          rows.push([...fields]);
+        }
+        fields.length = 0;
+      } else {
+        current += char;
+      }
+    }
+  }
+  // Last row
+  fields.push(current);
+  if (fields.some((f) => f.trim())) {
+    rows.push([...fields]);
+  }
+
+  return rows;
+}
+
+function parseEmotions(value: string): EmotionTag[] {
+  if (!value.trim()) return [];
+  return value.split(";").map((pair) => {
+    const [emotion, intensityStr] = pair.trim().split(":");
+    return {
+      emotion: emotion.trim() as Emotion,
+      intensity: Number(intensityStr) || 5,
+    };
+  }).filter((e) => e.emotion);
+}
+
+function parseEntities(value: string): ExtractedEntity[] {
+  if (!value.trim()) return [];
+  return value.split(";").map((pair, idx) => {
+    const colonIdx = pair.indexOf(":");
+    if (colonIdx === -1) return null;
+    const type = pair.slice(0, colonIdx).trim() as EntityType;
+    const entityValue = pair.slice(colonIdx + 1).trim();
+    if (!type || !entityValue) return null;
+    return {
+      id: `imported-${idx}-${entityValue}`,
+      type,
+      value: entityValue,
+      normalizedValue: entityValue.toLowerCase(),
+      frequency: 1,
+    };
+  }).filter((e): e is ExtractedEntity => e !== null);
+}
+
+export function importCSV(csvContent: string): ImportResult {
+  const errors: string[] = [];
+  const entries: Entry[] = [];
+
+  if (!csvContent.trim()) {
+    return { entries: [], errors: ["Empty CSV file"] };
+  }
+
+  const rows = parseCSVRows(csvContent);
+  if (rows.length === 0) {
+    return { entries: [], errors: ["Empty CSV file"] };
+  }
+
+  const headerLine = rows[0];
+  const headerSet = new Set(headerLine.map((h) => h.trim()));
+  const requiredHeaders = ["createdAt", "transcript"];
+  for (const required of requiredHeaders) {
+    if (!headerSet.has(required)) {
+      return { entries: [], errors: [`Missing required header: ${required}`] };
+    }
+  }
+
+  const headerIndex = Object.fromEntries(headerLine.map((h, i) => [h.trim(), i]));
+
+  for (let i = 1; i < rows.length; i++) {
+    try {
+      const fields = rows[i];
+      const get = (col: string): string => {
+        const idx = headerIndex[col];
+        return idx !== undefined && idx < fields.length ? fields[idx] : "";
+      };
+
+      const entry: Entry = {
+        createdAt: get("createdAt") || new Date().toISOString(),
+        transcript: get("transcript"),
+        title: get("title") || "",
+        tags: get("tags") ? get("tags").split(";").map((t) => t.trim()).filter(Boolean) : [],
+        sleepQuality: Number(get("sleepQuality")) || 5,
+        lucidDream: get("lucidDream") === "true",
+        nightmare: get("nightmare") === "true",
+        recurringDream: get("recurringDream") === "true",
+        emotions: parseEmotions(get("emotions")),
+        notes: get("notes") || "",
+        extractedEntities: parseEntities(get("extractedEntities")),
+      };
+
+      const idStr = get("id");
+      if (idStr && !isNaN(Number(idStr))) {
+        entry.id = Number(idStr);
+      }
+
+      entries.push(entry);
+    } catch {
+      errors.push(`Row ${i + 1}: Failed to parse`);
+    }
+  }
+
+  return { entries, errors };
 }

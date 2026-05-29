@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
 import { EmotionPicker } from "@/components/emotion-picker";
-import { clearEntries, getEntries, saveEntry } from "@/lib/db";
-import { emotionSummary, exportCSV } from "@/lib/analysis";
+import { clearEntries, getEntries, importEntries, saveEntry } from "@/lib/db";
+import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
 import { useSpeechCapture } from "@/hooks/use-speech-capture";
 import { useJournalStore } from "@/store/use-journal-store";
 import { requestPersistence } from "@/lib/requestPersistentStorage";
@@ -102,6 +102,60 @@ export function AppShell() {
     link.click();
     URL.revokeObjectURL(url);
     setSaveState("Local data exported as CSV.");
+  }
+
+  async function handleShareCSV() {
+    const csv = exportCSV(entries);
+    const filename = `lucid-lattice-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    const file = new File([csv], filename, { type: "text/csv" });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Lucid Lattice Export" });
+        setSaveState("Shared successfully.");
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setSaveState("Share failed.");
+        }
+      }
+    } else {
+      // Fallback: mailto with text body
+      const subject = encodeURIComponent("Lucid Lattice Dream Export");
+      const body = encodeURIComponent(csv.slice(0, 2000));
+      window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
+      setSaveState("Opening email client...");
+    }
+  }
+
+  async function handleImportCSV() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const result = importCSV(text);
+
+        if (result.errors.length > 0 && result.entries.length === 0) {
+          setSaveState(`Import failed: ${result.errors[0]}`);
+          return;
+        }
+
+        const { imported, skipped } = await importEntries(result.entries);
+        await refreshEntries();
+
+        const messages: string[] = [`Imported ${imported} entries.`];
+        if (skipped > 0) messages.push(`${skipped} duplicates skipped.`);
+        if (result.errors.length > 0) messages.push(`${result.errors.length} rows had errors.`);
+        setSaveState(messages.join(" "));
+      } catch {
+        setSaveState("Import failed: Could not read file.");
+      }
+    };
+    input.click();
   }
 
   return (
@@ -276,9 +330,15 @@ export function AppShell() {
               </span>
             </div>
 
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               <button type="button" onClick={handleExportCSV} disabled={entries.length === 0} className="secondary-button flex-1">
                 Export CSV
+              </button>
+              <button type="button" onClick={handleShareCSV} disabled={entries.length === 0} className="secondary-button flex-1">
+                Share
+              </button>
+              <button type="button" onClick={handleImportCSV} className="secondary-button flex-1">
+                Import CSV
               </button>
               <button type="button" onClick={handleDeleteAll} disabled={entries.length === 0} className="secondary-button flex-1 text-rose-200">
                 Delete local data
