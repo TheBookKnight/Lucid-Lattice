@@ -9,17 +9,15 @@ export const EMOTIONS = [
   "Anticipation",
 ] as const;
 
-export const TIMEFRAMES = ["7d", "30d", "60d", "90d", "all"] as const;
+export const TIMEFRAMES = ["30d", "60d", "90d", "all"] as const;
 
 export type Emotion = (typeof EMOTIONS)[number];
-export type EntryType = "dream" | "waking_event";
 export type Timeframe = (typeof TIMEFRAMES)[number];
 export type EntityType = "person" | "place" | "noun";
 
 export interface EmotionTag {
   emotion: Emotion;
   intensity: number;
-  doubleValenced: boolean;
 }
 
 export interface ExtractedEntity {
@@ -32,10 +30,8 @@ export interface ExtractedEntity {
 
 export interface Entry {
   id?: number;
-  type: EntryType;
   createdAt: string;
   transcript: string;
-  editedTranscript: string;
   title: string;
   tags: string[];
   sleepQuality: number;
@@ -56,10 +52,8 @@ export interface AnalysisFilters {
   timeframe: Timeframe;
   emotion: Emotion | "all";
   minIntensity: number;
-  entryType: EntryType | "all";
   lucidOnly: boolean;
   nightmareOnly: boolean;
-  doubleValencedOnly: boolean;
 }
 
 export interface PhraseMetric extends AnalysisMetric {
@@ -79,9 +73,7 @@ export interface AnalysisSnapshot {
 }
 
 export interface DraftEntry {
-  type: EntryType;
   transcript: string;
-  editedTranscript: string;
   title: string;
   tagsInput: string;
   sleepQuality: number;

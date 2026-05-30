@@ -1,3 +1,9 @@
+export interface SpeechCapabilities {
+  browserSupport: boolean;
+  localTranscription: boolean;
+  offlineAvailable: boolean;
+}
+
 export interface SpeechProvider {
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -49,6 +55,18 @@ export function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConst
   }
 
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+}
+
+export function detectSpeechCapabilities(): SpeechCapabilities {
+  const browserSupport = !!getSpeechRecognitionConstructor();
+  const localTranscription = browserSupport && !navigator.onLine;
+  const offlineAvailable = browserSupport;
+
+  return {
+    browserSupport,
+    localTranscription,
+    offlineAvailable,
+  };
 }
 
 export class WebSpeechProvider implements SpeechProvider {

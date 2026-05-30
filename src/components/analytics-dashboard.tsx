@@ -38,7 +38,7 @@ export function AnalyticsDashboard({
     <section className="space-y-5 rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold text-white">Pattern dashboard</h2>
-        <p className="text-sm text-zinc-400">Local-only analytics for recurring words, entities, and emotion trends.</p>
+        <p className="text-sm text-zinc-400">Local-only analytics for recurring words, phrases, entities, and emotion trends.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -58,21 +58,6 @@ export function AnalyticsDashboard({
         </label>
 
         <label className="space-y-2 text-sm text-zinc-300">
-          <span>Entry type</span>
-          <select
-            value={filters.entryType}
-            onChange={(event) => onFilterChange("entryType", event.target.value as AnalysisFilters["entryType"])}
-            className="field"
-          >
-            <option value="all">Dreams + waking experiences</option>
-            <option value="dream">Dreams only</option>
-            <option value="waking_event">Waking events only</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-2 text-sm text-zinc-300">
           <span>Emotion filter</span>
           <select
             value={filters.emotion}
@@ -90,6 +75,9 @@ export function AnalyticsDashboard({
             <option value="Anticipation">Anticipation</option>
           </select>
         </label>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-2 text-sm text-zinc-300">
           <span>Minimum intensity ({filters.minIntensity})</span>
           <input
@@ -101,33 +89,24 @@ export function AnalyticsDashboard({
             className="h-2 w-full accent-fuchsia-400"
           />
         </label>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="filter-toggle">
-          <input
-            type="checkbox"
-            checked={filters.lucidOnly}
-            onChange={(event) => onFilterChange("lucidOnly", event.target.checked)}
-          />
-          Lucid only
-        </label>
-        <label className="filter-toggle">
-          <input
-            type="checkbox"
-            checked={filters.nightmareOnly}
-            onChange={(event) => onFilterChange("nightmareOnly", event.target.checked)}
-          />
-          Nightmare only
-        </label>
-        <label className="filter-toggle">
-          <input
-            type="checkbox"
-            checked={filters.doubleValencedOnly}
-            onChange={(event) => onFilterChange("doubleValencedOnly", event.target.checked)}
-          />
-          Mixed emotions only
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="filter-toggle">
+            <input
+              type="checkbox"
+              checked={filters.lucidOnly}
+              onChange={(event) => onFilterChange("lucidOnly", event.target.checked)}
+            />
+            Lucid only
+          </label>
+          <label className="filter-toggle">
+            <input
+              type="checkbox"
+              checked={filters.nightmareOnly}
+              onChange={(event) => onFilterChange("nightmareOnly", event.target.checked)}
+            />
+            Nightmare only
+          </label>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -140,8 +119,8 @@ export function AnalyticsDashboard({
           <strong className="mt-2 text-2xl text-white">{snapshot.correlations[0]?.label ?? "N/A"}</strong>
         </div>
         <div className="stat-card">
-          <span className="text-xs uppercase tracking-[0.2em] text-zinc-500">Top word</span>
-          <strong className="mt-2 text-2xl text-white">{snapshot.topWords[0]?.label ?? "N/A"}</strong>
+          <span className="text-xs uppercase tracking-[0.2em] text-zinc-500">Top phrase</span>
+          <strong className="mt-2 text-2xl text-white">{snapshot.topPhrases[0]?.label ?? "N/A"}</strong>
         </div>
       </div>
 
@@ -150,11 +129,11 @@ export function AnalyticsDashboard({
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="chart-card">
-            <h3 className="chart-title">Recurring words</h3>
+            <h3 className="chart-title">Top phrases (frequency)</h3>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={snapshot.topWords} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+              <BarChart data={snapshot.topPhrases.slice(0, 10)} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={12} tickLine={false} axisLine={false} />
+                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} tickLine={false} axisLine={false} />
                 <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} />
                 <Bar dataKey="count" fill="#8b5cf6" radius={9999} />
@@ -178,7 +157,7 @@ export function AnalyticsDashboard({
           </div>
 
           <div className="chart-card lg:col-span-2">
-            <h3 className="chart-title">Top phrases</h3>
+            <h3 className="chart-title">Top 30 phrases</h3>
             {snapshot.topPhrases.length === 0 ? (
               <p className="text-sm text-zinc-500">No recurring phrases detected yet.</p>
             ) : (

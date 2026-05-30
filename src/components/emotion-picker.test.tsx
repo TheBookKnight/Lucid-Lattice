@@ -50,13 +50,4 @@ describe("EmotionPicker", () => {
     const joy = useJournalStore.getState().draft.emotions.find((e) => e.emotion === "Joy");
     expect(joy?.intensity).toBe(9);
   });
-
-  it("toggles double-valenced flag", () => {
-    render(<EmotionPicker />);
-    fireEvent.click(screen.getByRole("button", { name: "Fear" }));
-    const checkbox = screen.getByRole("checkbox", { name: /double-valenced/i });
-    fireEvent.click(checkbox);
-    const fear = useJournalStore.getState().draft.emotions.find((e) => e.emotion === "Fear");
-    expect(fear?.doubleValenced).toBe(true);
-  });
 });

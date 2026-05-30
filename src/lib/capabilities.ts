@@ -3,6 +3,7 @@ export interface DeviceCapabilities {
   storageQuota: number | null;
   speechRecognition: boolean;
   localOnly: boolean;
+  storagePersisted: boolean;
 }
 
 export async function detectCapabilities(): Promise<DeviceCapabilities> {
@@ -19,10 +20,16 @@ export async function detectCapabilities(): Promise<DeviceCapabilities> {
 
   const localOnly = !navigator.onLine || webGPU;
 
+  let storagePersisted = false;
+  if (navigator.storage?.persisted) {
+    storagePersisted = await navigator.storage.persisted();
+  }
+
   return {
     webGPU,
     storageQuota,
     speechRecognition,
     localOnly,
+    storagePersisted,
   };
 }

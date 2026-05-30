@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
 import { EmotionPicker } from "@/components/emotion-picker";
-import { clearEntries, getEntries, saveEntry } from "@/lib/db";
-import { emotionSummary } from "@/lib/analysis";
+import { clearEntries, getEntries, importEntries, saveEntry } from "@/lib/db";
+import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
 import { useSpeechCapture } from "@/hooks/use-speech-capture";
 import { useJournalStore } from "@/store/use-journal-store";
+import { requestPersistence } from "@/lib/requestPersistentStorage";
 import type { Entry } from "@/types/journal";
 
 function formatTimestamp(timestamp: string): string {
@@ -20,7 +21,6 @@ function formatTimestamp(timestamp: string): string {
 export function AppShell() {
   const draft = useJournalStore((state) => state.draft);
   const filters = useJournalStore((state) => state.filters);
-  const setType = useJournalStore((state) => state.setType);
   const updateDraft = useJournalStore((state) => state.updateDraft);
   const resetDraft = useJournalStore((state) => state.resetDraft);
   const updateFilters = useJournalStore((state) => state.updateFilters);
@@ -28,6 +28,7 @@ export function AppShell() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [saveState, setSaveState] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [persistenceHint, setPersistenceHint] = useState<string | null>(null);
   const speechBaseRef = useRef("");
 
   const refreshEntries = useCallback(async () => {
@@ -37,20 +38,27 @@ export function AppShell() {
 
   useEffect(() => {
     refreshEntries().catch(() => undefined);
+    requestPersistence().then((granted) => {
+      if (!granted) {
+        setPersistenceHint("Add Lucid Lattice to Home Screen for improved offline storage reliability.");
+      }
+    });
   }, [refreshEntries]);
 
   const onTranscript = useCallback(
     (transcript: string) => {
       const combinedTranscript = `${speechBaseRef.current} ${transcript}`.trim();
       updateDraft("transcript", combinedTranscript);
-      updateDraft("editedTranscript", combinedTranscript);
     },
     [updateDraft],
   );
 
   const { clearError, errorMessage, isListening, isSupported, start, stop } = useSpeechCapture(onTranscript);
 
-  const saveDisabled = useMemo(() => !(draft.editedTranscript || draft.transcript).trim(), [draft]);
+  const saveDisabled = useMemo(
+    () => !draft.title.trim() || !draft.transcript.trim() || draft.emotions.length === 0,
+    [draft],
+  );
 
   async function handleRecordToggle() {
     clearError();
@@ -71,8 +79,8 @@ export function AppShell() {
 
     setIsSaving(true);
     await saveEntry(draft);
-    setSaveState(`${draft.type === "dream" ? "Dream" : "Waking experience"} saved offline.`);
-    resetDraft(draft.type);
+    setSaveState("Dream saved offline.");
+    resetDraft();
     await refreshEntries();
     setIsSaving(false);
   }
@@ -87,17 +95,70 @@ export function AppShell() {
     setSaveState("All local entries deleted.");
   }
 
-  function handleExport() {
-    const blob = new Blob([JSON.stringify(entries, null, 2)], {
-      type: "application/json",
-    });
+  function handleExportCSV() {
+    const csv = exportCSV(entries);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `lucid-lattice-export-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `lucid-lattice-export-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    setSaveState("Local data exported as JSON.");
+    setSaveState("Local data exported as CSV.");
+  }
+
+  async function handleShareCSV() {
+    const csv = exportCSV(entries);
+    const filename = `lucid-lattice-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    const file = new File([csv], filename, { type: "text/csv" });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Lucid Lattice Export" });
+        setSaveState("Shared successfully.");
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setSaveState("Share failed.");
+        }
+      }
+    } else {
+      // Fallback: mailto with text body
+      const subject = encodeURIComponent("Lucid Lattice Dream Export");
+      const body = encodeURIComponent(csv.slice(0, 2000));
+      window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
+      setSaveState("Opening email client...");
+    }
+  }
+
+  async function handleImportCSV() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const result = importCSV(text);
+
+        if (result.errors.length > 0 && result.entries.length === 0) {
+          setSaveState(`Import failed: ${result.errors[0]}`);
+          return;
+        }
+
+        const { imported, skipped } = await importEntries(result.entries);
+        await refreshEntries();
+
+        const messages: string[] = [`Imported ${imported} entries.`];
+        if (skipped > 0) messages.push(`${skipped} duplicates skipped.`);
+        if (result.errors.length > 0) messages.push(`${result.errors.length} rows had errors.`);
+        setSaveState(messages.join(" "));
+      } catch {
+        setSaveState("Import failed: Could not read file.");
+      }
+    };
+    input.click();
   }
 
   return (
@@ -109,7 +170,7 @@ export function AppShell() {
           </div>
           <div className="space-y-3">
             <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              Capture dreams and waking signals before they fade.
+              Capture dreams before they fade.
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
               Lucid Lattice is a privacy-first mobile journal designed for half-awake capture, emotion tagging, local pattern analysis,
@@ -124,25 +185,14 @@ export function AppShell() {
         </div>
       </section>
 
+      {persistenceHint ? (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {persistenceHint}
+        </div>
+      ) : null}
+
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6 rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setType("dream")}
-              className={`tab-button ${draft.type === "dream" ? "tab-button-active" : ""}`}
-            >
-              Dream entry
-            </button>
-            <button
-              type="button"
-              onClick={() => setType("waking_event")}
-              className={`tab-button ${draft.type === "waking_event" ? "tab-button-active" : ""}`}
-            >
-              Waking experience
-            </button>
-          </div>
-
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -165,12 +215,12 @@ export function AppShell() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-2 text-sm text-zinc-300">
-              <span>{draft.type === "dream" ? "Dream title" : "Moment title"}</span>
+              <span>Dream title</span>
               <input
                 className="field"
                 value={draft.title}
                 onChange={(event) => updateDraft("title", event.target.value)}
-                placeholder={draft.type === "dream" ? "Flying over the ocean" : "Tense conversation at work"}
+                placeholder="Flying over the ocean"
               />
             </label>
             <label className="space-y-2 text-sm text-zinc-300">
@@ -189,26 +239,13 @@ export function AppShell() {
             <textarea
               className="field min-h-36"
               value={draft.transcript}
-              onChange={(event) => {
-                updateDraft("transcript", event.target.value);
-                updateDraft("editedTranscript", event.target.value);
-              }}
-              placeholder="Describe the dream or waking experience while it is fresh."
+              onChange={(event) => updateDraft("transcript", event.target.value)}
+              placeholder="Describe the dream while it is fresh. This can be raw speech-to-text or manually corrected."
             />
           </label>
 
           <label className="space-y-2 text-sm text-zinc-300">
-            <span>Edited transcript / notes</span>
-            <textarea
-              className="field min-h-32"
-              value={draft.editedTranscript}
-              onChange={(event) => updateDraft("editedTranscript", event.target.value)}
-              placeholder="Clean up the transcript, add context, or correct speech-to-text mistakes."
-            />
-          </label>
-
-          <label className="space-y-2 text-sm text-zinc-300">
-            <span>Optional reflective notes</span>
+            <span>Reflective notes</span>
             <textarea
               className="field min-h-24"
               value={draft.notes}
@@ -217,55 +254,53 @@ export function AppShell() {
             />
           </label>
 
-          {draft.type === "dream" ? (
-            <div className="space-y-4 rounded-3xl border border-white/10 bg-zinc-950/60 p-4">
-              <label className="space-y-2 text-sm text-zinc-300">
-                <span>Sleep quality ({draft.sleepQuality}/10)</span>
+          <div className="space-y-4 rounded-3xl border border-white/10 bg-zinc-950/60 p-4">
+            <label className="space-y-2 text-sm text-zinc-300">
+              <span>Sleep quality ({draft.sleepQuality}/10)</span>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={draft.sleepQuality}
+                onChange={(event) => updateDraft("sleepQuality", Number(event.target.value))}
+                className="h-2 w-full accent-sky-400"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="filter-toggle">
                 <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={draft.sleepQuality}
-                  onChange={(event) => updateDraft("sleepQuality", Number(event.target.value))}
-                  className="h-2 w-full accent-sky-400"
+                  type="checkbox"
+                  checked={draft.lucidDream}
+                  onChange={(event) => updateDraft("lucidDream", event.target.checked)}
                 />
+                Lucid dream
               </label>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="filter-toggle">
-                  <input
-                    type="checkbox"
-                    checked={draft.lucidDream}
-                    onChange={(event) => updateDraft("lucidDream", event.target.checked)}
-                  />
-                  Lucid dream
-                </label>
-                <label className="filter-toggle">
-                  <input
-                    type="checkbox"
-                    checked={draft.nightmare}
-                    onChange={(event) => updateDraft("nightmare", event.target.checked)}
-                  />
-                  Nightmare
-                </label>
-                <label className="filter-toggle">
-                  <input
-                    type="checkbox"
-                    checked={draft.recurringDream}
-                    onChange={(event) => updateDraft("recurringDream", event.target.checked)}
-                  />
-                  Recurring
-                </label>
-              </div>
+              <label className="filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={draft.nightmare}
+                  onChange={(event) => updateDraft("nightmare", event.target.checked)}
+                />
+                Nightmare
+              </label>
+              <label className="filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={draft.recurringDream}
+                  onChange={(event) => updateDraft("recurringDream", event.target.checked)}
+                />
+                Recurring
+              </label>
             </div>
-          ) : null}
+          </div>
 
           <EmotionPicker />
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" onClick={handleSave} disabled={isSaving || saveDisabled} className="primary-button">
-              {isSaving ? "Saving…" : draft.type === "dream" ? "Save dream entry" : "Save waking entry"}
+              {isSaving ? "Saving…" : "Save dream entry"}
             </button>
-            <button type="button" onClick={() => resetDraft(draft.type)} className="secondary-button">
+            <button type="button" onClick={() => resetDraft()} className="secondary-button">
               Clear draft
             </button>
           </div>
@@ -283,6 +318,7 @@ export function AppShell() {
                 <p className="font-medium text-white">iPhone / Safari</p>
                 <p className="mt-2">Open in Safari, use <strong>Share → Add to Home Screen</strong>, then launch fullscreen from your home screen.</p>
               </div>
+              <p className="text-xs text-zinc-400">Installed PWAs receive stronger offline storage persistence.</p>
             </div>
           </section>
 
@@ -297,9 +333,15 @@ export function AppShell() {
               </span>
             </div>
 
-            <div className="mt-4 flex gap-3">
-              <button type="button" onClick={handleExport} disabled={entries.length === 0} className="secondary-button flex-1">
-                Export JSON
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button type="button" onClick={handleExportCSV} disabled={entries.length === 0} className="secondary-button flex-1">
+                Export CSV
+              </button>
+              <button type="button" onClick={handleShareCSV} disabled={entries.length === 0} className="secondary-button flex-1">
+                Share
+              </button>
+              <button type="button" onClick={handleImportCSV} className="secondary-button flex-1">
+                Import CSV
               </button>
               <button type="button" onClick={handleDeleteAll} disabled={entries.length === 0} className="secondary-button flex-1 text-rose-200">
                 Delete local data
@@ -316,12 +358,11 @@ export function AppShell() {
                   <article key={entry.id} className="rounded-2xl bg-zinc-950/70 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-white">{entry.title || (entry.type === "dream" ? "Untitled dream" : "Untitled waking experience")}</p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-zinc-500">{entry.type === "dream" ? "Dream" : "Waking experience"}</p>
+                        <p className="text-sm font-medium text-white">{entry.title || "Untitled dream"}</p>
                       </div>
                       <time className="text-xs text-zinc-500">{formatTimestamp(entry.createdAt)}</time>
                     </div>
-                    <p className="mt-3 line-clamp-4 text-sm leading-6 text-zinc-300">{entry.editedTranscript || entry.transcript}</p>
+                    <p className="mt-3 line-clamp-4 text-sm leading-6 text-zinc-300">{entry.transcript}</p>
                     {entry.emotions.length > 0 ? (
                       <p className="mt-3 text-xs text-zinc-400">{emotionSummary(entry.emotions)}</p>
                     ) : null}

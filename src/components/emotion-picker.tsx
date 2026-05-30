@@ -18,13 +18,12 @@ export function EmotionPicker() {
   const draft = useJournalStore((state) => state.draft);
   const toggleEmotion = useJournalStore((state) => state.toggleEmotion);
   const setEmotionIntensity = useJournalStore((state) => state.setEmotionIntensity);
-  const toggleDoubleValenced = useJournalStore((state) => state.toggleDoubleValenced);
 
   return (
     <section className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold text-white">Emotion tags</h2>
-        <p className="text-sm text-zinc-400">Select multiple emotions, track intensity, and flag mixed emotional states.</p>
+        <p className="text-sm text-zinc-400">Select multiple emotions and track intensity.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -52,15 +51,6 @@ export function EmotionPicker() {
                   <p className="font-medium text-white">{emotion.emotion}</p>
                   <p className="text-xs text-zinc-400">Intensity {emotion.intensity}/10</p>
                 </div>
-                <label className="flex items-center gap-2 text-xs text-zinc-300">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-white/20 bg-zinc-900"
-                    checked={emotion.doubleValenced}
-                    onChange={() => toggleDoubleValenced(emotion.emotion)}
-                  />
-                  Double-valenced
-                </label>
               </div>
               <input
                 type="range"
