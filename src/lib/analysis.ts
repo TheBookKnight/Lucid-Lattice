@@ -41,6 +41,7 @@ export const defaultFilters: AnalysisFilters = {
   minIntensity: 1,
   lucidOnly: false,
   nightmareOnly: false,
+  favoritesOnly: false,
 };
 
 export function createEmptyDraft(): DraftEntry {
@@ -163,6 +164,10 @@ function applyTimeframe(entries: Entry[], timeframe: Timeframe): Entry[] {
 
 export function filterEntries(entries: Entry[], filters: AnalysisFilters): Entry[] {
   return applyTimeframe(entries, filters.timeframe).filter((entry) => {
+    if (filters.favoritesOnly && !entry.isFavorite) {
+      return false;
+    }
+
     if (filters.lucidOnly && !entry.lucidDream) {
       return false;
     }
@@ -291,6 +296,7 @@ export const CSV_HEADERS = [
   "emotions",
   "notes",
   "extractedEntities",
+  "isFavorite",
 ] as const;
 
 export function escapeCSV(value: string): string {
@@ -320,6 +326,7 @@ export function exportCSV(entries: Entry[]): string {
       escapeCSV(emotions),
       escapeCSV(entry.notes),
       escapeCSV(entities),
+      String(entry.isFavorite),
     ].join(",");
   });
 
@@ -451,6 +458,7 @@ export function importCSV(csvContent: string): ImportResult {
         emotions: parseEmotions(get("emotions")),
         notes: get("notes") || "",
         extractedEntities: parseEntities(get("extractedEntities")),
+        isFavorite: get("isFavorite") === "true",
       };
 
       const idStr = get("id");

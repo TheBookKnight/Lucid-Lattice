@@ -41,6 +41,8 @@ export interface Entry {
   emotions: EmotionTag[];
   notes: string;
   extractedEntities: ExtractedEntity[];
+  audioBlobId?: string;
+  isFavorite: boolean;
 }
 
 export interface AnalysisMetric {
@@ -54,6 +56,7 @@ export interface AnalysisFilters {
   minIntensity: number;
   lucidOnly: boolean;
   nightmareOnly: boolean;
+  favoritesOnly: boolean;
 }
 
 export interface PhraseMetric extends AnalysisMetric {

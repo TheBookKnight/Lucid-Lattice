@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
+import { AudioRecorder } from "@/components/audio-recorder";
 import { EmotionPicker } from "@/components/emotion-picker";
-import { clearEntries, getEntries, importEntries, saveEntry } from "@/lib/db";
+import { FavoriteButton } from "@/components/favorite-button";
+import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry } from "@/lib/db";
 import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
 import { useSpeechCapture } from "@/hooks/use-speech-capture";
 import { useJournalStore } from "@/store/use-journal-store";
@@ -29,6 +31,8 @@ export function AppShell() {
   const [saveState, setSaveState] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [persistenceHint, setPersistenceHint] = useState<string | null>(null);
+  const [audioBlobId, setAudioBlobId] = useState<string | undefined>(undefined);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const speechBaseRef = useRef("");
 
   const refreshEntries = useCallback(async () => {
@@ -78,9 +82,13 @@ export function AppShell() {
     }
 
     setIsSaving(true);
-    await saveEntry(draft);
+    const entryId = await saveEntry(draft);
+    if (audioBlobId) {
+      await updateEntry(entryId, { audioBlobId });
+    }
     setSaveState("Dream saved offline.");
     resetDraft();
+    setAudioBlobId(undefined);
     await refreshEntries();
     setIsSaving(false);
   }
@@ -296,6 +304,12 @@ export function AppShell() {
 
           <EmotionPicker />
 
+          <AudioRecorder
+            audioBlobId={audioBlobId}
+            onAudioSaved={(id) => setAudioBlobId(id)}
+            onAudioDeleted={() => setAudioBlobId(undefined)}
+          />
+
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" onClick={handleSave} disabled={isSaving || saveDisabled} className="primary-button">
               {isSaving ? "Saving…" : "Save dream entry"}
@@ -348,17 +362,43 @@ export function AppShell() {
               </button>
             </div>
 
+            <div className="mt-3 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowFavoritesOnly(false)}
+                className={`text-sm ${!showFavoritesOnly ? "text-white font-medium" : "text-zinc-400"}`}
+              >
+                All Dreams
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFavoritesOnly(true)}
+                className={`text-sm ${showFavoritesOnly ? "text-white font-medium" : "text-zinc-400"}`}
+              >
+                ⭐ Favorites Only
+              </button>
+            </div>
+
             <div className="mt-4 space-y-3">
               {entries.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-white/10 bg-zinc-950/40 p-4 text-sm text-zinc-400">
                   Your saved entries will appear here for offline review.
                 </p>
               ) : (
-                entries.slice(0, 6).map((entry) => (
+                (showFavoritesOnly ? entries.filter((e) => e.isFavorite) : entries).slice(0, 6).map((entry) => (
                   <article key={entry.id} className="rounded-2xl bg-zinc-950/70 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-white">{entry.title || "Untitled dream"}</p>
+                        <FavoriteButton
+                          isFavorite={entry.isFavorite}
+                          onToggle={async () => {
+                            if (entry.id !== undefined) {
+                              await toggleFavorite(entry.id);
+                              await refreshEntries();
+                            }
+                          }}
+                        />
                       </div>
                       <time className="text-xs text-zinc-500">{formatTimestamp(entry.createdAt)}</time>
                     </div>
