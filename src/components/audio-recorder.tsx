@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AudioRecordingService, MAX_RECORDING_DURATION_MS, type RecordingResult } from "@/lib/audio-recording";
 import { deleteAudioBlob, getAudioBlob, saveAudioBlob } from "@/lib/db";
+import { selectSpeechProvider } from "@/lib/transcription";
 
 interface AudioRecorderProps {
   audioBlobId?: string;
   onAudioSaved: (blobId: string) => void;
   onAudioDeleted: () => void;
+  onTranscriptReady?: (text: string) => void;
 }
 
 function formatTime(ms: number): string {
@@ -18,11 +20,12 @@ function formatTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted }: AudioRecorderProps) {
+export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTranscriptReady }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const serviceRef = useRef<AudioRecordingService | null>(null);
@@ -59,8 +62,26 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted }: Aud
       setIsRecording(false);
       setElapsedMs(0);
       onAudioSaved(id);
+
+      // Auto-transcribe the recording
+      if (onTranscriptReady) {
+        setIsTranscribing(true);
+        try {
+          const provider = await selectSpeechProvider();
+          if (provider) {
+            const text = await provider.transcribe(result.blob);
+            if (text) {
+              onTranscriptReady(text);
+            }
+          }
+        } catch {
+          // Transcription is best-effort; don't block the recording flow
+        } finally {
+          setIsTranscribing(false);
+        }
+      }
     },
-    [onAudioSaved],
+    [onAudioSaved, onTranscriptReady],
   );
 
   async function handleStartRecording() {
@@ -99,6 +120,18 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted }: Aud
     }
 
     await handleStartRecording();
+  }
+
+  async function handleDelete() {
+    if (audioBlobId) {
+      await deleteAudioBlob(audioBlobId);
+      onAudioDeleted();
+    }
+
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+      setAudioUrl(null);
+    }
   }
 
   function handlePlay() {
@@ -165,9 +198,16 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted }: Aud
             <button type="button" onClick={handleReRecord} className="secondary-button text-sm text-rose-200">
               Re-record
             </button>
+            <button type="button" onClick={handleDelete} className="secondary-button text-sm text-rose-200">
+              Delete
+            </button>
           </>
         )}
       </div>
+
+      {isTranscribing && (
+        <p className="text-xs text-sky-300">Transcribing audio…</p>
+      )}
 
       {audioUrl && (
         <audio

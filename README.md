@@ -1,6 +1,6 @@
 # Lucid Lattice
 
-Lucid Lattice is a mobile-first, offline-first PWA for capturing dream journals on iPhone and Android without app stores, accounts, or backend infrastructure.
+Lucid Lattice is a mobile-first, offline-first PWA for capturing dream journals on iPhone and Android without app stores.
 
 ## Features
 
@@ -15,7 +15,6 @@ Lucid Lattice is a mobile-first, offline-first PWA for capturing dream journals 
 - CSV export with correct escaping for all entry data
 - PWA manifest, service worker, cached app shell, fullscreen install
 - Storage persistence request with install guidance fallback
-- No accounts, no backend, no tracking
 
 ## Audio Recording
 
@@ -35,7 +34,7 @@ Audio recordings never leave the device. There is no cloud upload, no API calls,
 
 ### Current implementation
 
-The app uses the **Web Speech API** (`SpeechRecognition` / `webkitSpeechRecognition`) for live speech-to-text capture. The existing "Tap to speak" button provides real-time transcription.
+The app uses the **Web Speech API** (`SpeechRecognition` / `webkitSpeechRecognition`) to auto-transcribe audio recordings after capture. When a recording completes, the transcript is automatically generated and placed in the notes field.
 
 ### SpeechProvider architecture
 
@@ -163,7 +162,6 @@ After the first successful load, the service worker caches the shell and same-or
 
 ## Privacy
 
-- No accounts
 - No trackers
 - No ads
 - No cloud sync

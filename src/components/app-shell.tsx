@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
 import { AudioRecorder } from "@/components/audio-recorder";
@@ -8,7 +8,6 @@ import { EmotionPicker } from "@/components/emotion-picker";
 import { FavoriteButton } from "@/components/favorite-button";
 import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry } from "@/lib/db";
 import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
-import { useSpeechCapture } from "@/hooks/use-speech-capture";
 import { useJournalStore } from "@/store/use-journal-store";
 import { requestPersistence } from "@/lib/requestPersistentStorage";
 import type { Entry } from "@/types/journal";
@@ -33,7 +32,6 @@ export function AppShell() {
   const [persistenceHint, setPersistenceHint] = useState<string | null>(null);
   const [audioBlobId, setAudioBlobId] = useState<string | undefined>(undefined);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const speechBaseRef = useRef("");
 
   const refreshEntries = useCallback(async () => {
     const storedEntries = await getEntries();
@@ -49,32 +47,10 @@ export function AppShell() {
     });
   }, [refreshEntries]);
 
-  const onTranscript = useCallback(
-    (transcript: string) => {
-      const combinedTranscript = `${speechBaseRef.current} ${transcript}`.trim();
-      updateDraft("transcript", combinedTranscript);
-    },
-    [updateDraft],
-  );
-
-  const { clearError, errorMessage, isListening, isSupported, start, stop } = useSpeechCapture(onTranscript);
-
   const saveDisabled = useMemo(
     () => !draft.title.trim() || !draft.transcript.trim() || draft.emotions.length === 0,
     [draft],
   );
-
-  async function handleRecordToggle() {
-    clearError();
-
-    if (isListening) {
-      await stop();
-      return;
-    }
-
-    speechBaseRef.current = draft.transcript.trim();
-    await start();
-  }
 
   async function handleSave() {
     if (saveDisabled) {
@@ -185,10 +161,9 @@ export function AppShell() {
               and reflective—not predictive—correlation review.
             </p>
           </div>
-          <div className="grid gap-3 text-sm text-zinc-200 sm:grid-cols-3">
+          <div className="grid gap-3 text-sm text-zinc-200 sm:grid-cols-2">
             <div className="info-chip">Installable from Chrome and Safari home screens</div>
             <div className="info-chip">Works offline after the first visit</div>
-            <div className="info-chip">No account, backend, ads, or tracking</div>
           </div>
         </div>
       </section>
@@ -202,22 +177,11 @@ export function AppShell() {
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6 rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Quick capture</h2>
-                <p className="text-sm text-zinc-400">One-handed, low-light journaling with manual fallback when speech is unavailable.</p>
-              </div>
-              <button type="button" onClick={handleRecordToggle} className="record-button">
-                {isListening ? "Stop recording" : "Tap to speak"}
-              </button>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Quick capture</h2>
+              <p className="text-sm text-zinc-400">One-handed, low-light journaling. Record audio and it will be auto-transcribed.</p>
             </div>
 
-            <p className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
-              {isSupported
-                ? "Speech recognition uses the Web Speech API when available on this device."
-                : "Speech recognition is unavailable here, so manual entry stays fully supported."}
-            </p>
-            {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
             {saveState ? <p className="text-sm text-emerald-300">{saveState}</p> : null}
           </div>
 
@@ -308,6 +272,7 @@ export function AppShell() {
             audioBlobId={audioBlobId}
             onAudioSaved={(id) => setAudioBlobId(id)}
             onAudioDeleted={() => setAudioBlobId(undefined)}
+            onTranscriptReady={(text) => updateDraft("transcript", text)}
           />
 
           <div className="flex flex-col gap-3 sm:flex-row">
