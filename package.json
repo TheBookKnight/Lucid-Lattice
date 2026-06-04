@@ -43,7 +43,6 @@
     "wrangler": "^4.94.0"
   },
   "overrides": {
-    "postcss": "8.5.14",
-    "onnxruntime-web": "1.21.0"
+    "postcss": "8.5.14"
   }
 }

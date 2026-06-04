@@ -3,6 +3,61 @@ import { env, pipeline, type AutomaticSpeechRecognitionPipeline } from "@hugging
 // Prevent model downloads from local filesystem (always use CDN)
 env.allowLocalModels = false;
 
+// Disable WASM caching to prevent the library from loading the WASM factory as a blob URL.
+// When loaded as a blob URL, relative URL resolution inside the factory throws "Invalid URL".
+env.useWasmCache = false;
+
+// Configure ONNX Runtime WASM backend to use local files from our public folder.
+// This avoids dynamic import failures of nonexistent .asyncify.mjs files on CDN,
+// keeps all speech transcription logic fully self-hosted, and allows offline operation.
+if (env.backends.onnx.wasm) {
+  // Construct absolute URLs to prevent URL resolution errors when the worker
+  // is loaded via a blob URL (common in bundlers). If self.location.origin is "null"
+  // because of the blob URL, we extract the origin from the inner URL in location.href.
+  let origin = "";
+  if (typeof self !== "undefined" && self.location) {
+    const href = self.location.href;
+    if (href.startsWith("blob:")) {
+      try {
+        const match = href.match(/blob:(https?:\/\/[^\/]+)/);
+        if (match) {
+          origin = match[1];
+        } else {
+          origin = new URL(href.slice(5)).origin;
+        }
+      } catch {
+        origin = self.location.origin;
+      }
+    } else {
+      origin = self.location.origin;
+    }
+  }
+
+  if (!origin || origin === "null") {
+    origin = "";
+  }
+
+  const originalPaths = env.backends.onnx.wasm.wasmPaths;
+  const isAsyncify = typeof originalPaths === "object" && 
+    originalPaths?.mjs && 
+    String(originalPaths.mjs).includes("asyncify");
+
+  env.backends.onnx.wasm.wasmPaths = {
+    // Specific filename mappings
+    'ort-wasm-simd-threaded.wasm': `${origin}/wasm/ort-wasm-simd-threaded.wasm`,
+    'ort-wasm-simd-threaded.mjs': `${origin}/wasm/ort-wasm-simd-threaded.mjs`,
+    'ort-wasm-simd-threaded.asyncify.wasm': `${origin}/wasm/ort-wasm-simd-threaded.asyncify.wasm`,
+    'ort-wasm-simd-threaded.asyncify.mjs': `${origin}/wasm/ort-wasm-simd-threaded.asyncify.mjs`,
+    // Fallback keys mapped based on the environment detection
+    wasm: isAsyncify
+      ? `${origin}/wasm/ort-wasm-simd-threaded.asyncify.wasm`
+      : `${origin}/wasm/ort-wasm-simd-threaded.wasm`,
+    mjs: isAsyncify
+      ? `${origin}/wasm/ort-wasm-simd-threaded.asyncify.mjs`
+      : `${origin}/wasm/ort-wasm-simd-threaded.mjs`,
+  } as Record<string, string>;
+}
+
 export type TranscriberMessage =
   | { type: "progress"; progress: number; message: string }
   | { type: "success"; text: string }
@@ -64,10 +119,7 @@ self.onmessage = async (event: MessageEvent<TranscriberInput>) => {
 
     let result;
     try {
-      result = await transcriber(audio, {
-        language: "en",
-        task: "transcribe",
-      });
+      result = await transcriber(audio);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Inference failed";
       self.postMessage({

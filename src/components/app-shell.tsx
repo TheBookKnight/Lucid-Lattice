@@ -6,7 +6,7 @@ import { AnalyticsDashboard } from "@/components/analytics-dashboard";
 import { AudioRecorder } from "@/components/audio-recorder";
 import { EmotionPicker } from "@/components/emotion-picker";
 import { FavoriteButton } from "@/components/favorite-button";
-import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry } from "@/lib/db";
+import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry, saveAudioBlob } from "@/lib/db";
 import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
 import { useJournalStore } from "@/store/use-journal-store";
 import { requestPersistence } from "@/lib/requestPersistentStorage";
@@ -212,6 +212,31 @@ export function AppShell() {
             onAudioDeleted={() => setAudioBlobId(undefined)}
             onTranscriptReady={(text) => updateDraft("transcript", text)}
           />
+
+          {process.env.NODE_ENV === "development" && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                id="test-inject-audio"
+                className="text-xs text-sky-400 hover:text-sky-300 underline cursor-pointer"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/chocolate.m4a");
+                    if (!res.ok) throw new Error("Failed to fetch chocolate.m4a");
+                    const blob = await res.blob();
+                    const id = "chocolate-audio-id";
+                    await saveAudioBlob(id, blob, "audio/mp4");
+                    setAudioBlobId(id);
+                    setSaveState("Test audio injected successfully.");
+                  } catch (err) {
+                    setSaveState(`Test audio injection failed: ${(err as Error).message}`);
+                  }
+                }}
+              >
+                [Dev] Inject Test Audio
+              </button>
+            </div>
+          )}
 
           <label className="space-y-2 text-sm text-zinc-300">
             <span>Transcript</span>
