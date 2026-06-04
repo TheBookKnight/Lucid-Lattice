@@ -6,7 +6,7 @@ env.allowLocalModels = false;
 export type TranscriberMessage =
   | { type: "progress"; progress: number; message: string }
   | { type: "success"; text: string }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string; stage: "worker-init" | "model-load" | "inference" };
 
 export type TranscriberInput = {
   type: "transcribe";
@@ -24,21 +24,28 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
     message: "Loading transcription model…",
   } satisfies TranscriberMessage);
 
-  pipelineInstance = await pipeline(
-    "automatic-speech-recognition",
-    "Xenova/whisper-tiny.en",
-    {
-      progress_callback: (data: { progress?: number; status?: string }) => {
-        if (typeof data.progress === "number") {
-          self.postMessage({
-            type: "progress",
-            progress: Math.round(data.progress),
-            message: data.status === "download" ? "Downloading model…" : "Loading model…",
-          } satisfies TranscriberMessage);
-        }
+  try {
+    pipelineInstance = await pipeline(
+      "automatic-speech-recognition",
+      "onnx-community/whisper-tiny.en",
+      {
+        device: "wasm",
+        dtype: "fp32",
+        progress_callback: (data: { progress?: number; status?: string }) => {
+          if (typeof data.progress === "number") {
+            self.postMessage({
+              type: "progress",
+              progress: Math.round(data.progress),
+              message: data.status === "download" ? "Downloading model…" : "Loading model…",
+            } satisfies TranscriberMessage);
+          }
+        },
       },
-    },
-  );
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown model load error";
+    throw new Error(`Model load failed: ${message}`);
+  }
 
   return pipelineInstance;
 }
@@ -55,10 +62,21 @@ self.onmessage = async (event: MessageEvent<TranscriberInput>) => {
       message: "Transcribing…",
     } satisfies TranscriberMessage);
 
-    const result = await transcriber(audio, {
-      language: "en",
-      task: "transcribe",
-    });
+    let result;
+    try {
+      result = await transcriber(audio, {
+        language: "en",
+        task: "transcribe",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Inference failed";
+      self.postMessage({
+        type: "error",
+        error: `Inference failed: ${message}`,
+        stage: "inference",
+      } satisfies TranscriberMessage);
+      return;
+    }
 
     const text = Array.isArray(result)
       ? result.map((r) => r.text).join(" ")
@@ -69,9 +87,12 @@ self.onmessage = async (event: MessageEvent<TranscriberInput>) => {
       text: text.trim(),
     } satisfies TranscriberMessage);
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Transcription failed.";
+    const stage = message.startsWith("Model load failed") ? "model-load" : "inference";
     self.postMessage({
       type: "error",
-      error: err instanceof Error ? err.message : "Transcription failed.",
+      error: message,
+      stage,
     } satisfies TranscriberMessage);
   }
 };

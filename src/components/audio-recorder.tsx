@@ -34,7 +34,37 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobRef = useRef<Blob | null>(null);
 
-  // Load existing audio blob
+  /** Shared transcription logic used by both auto and manual paths. */
+  const runTranscription = useCallback(async () => {
+    if (!blobRef.current || isTranscribing) return;
+
+    setIsTranscribing(true);
+    setTranscriptionProgress(0);
+    setTranscriptionError(null);
+
+    try {
+      const provider = await selectSpeechProvider();
+      if (!provider) {
+        throw new Error("Transcription is not available on this device.");
+      }
+
+      const text = await provider.transcribe(blobRef.current, (progress) => {
+        setTranscriptionProgress(progress);
+      });
+
+      if (text && onTranscriptReady) {
+        onTranscriptReady(text);
+      }
+    } catch (err) {
+      setTranscriptionError(
+        err instanceof Error ? err.message : "Transcription failed.",
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [isTranscribing, onTranscriptReady]);
+
+  // Load existing audio blob (does NOT auto-transcribe)
   useEffect(() => {
     if (!audioBlobId) {
       setAudioUrl(null);
@@ -69,8 +99,14 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       setElapsedMs(0);
       setTranscriptionError(null);
       onAudioSaved(id);
+
+      // Auto-transcribe freshly completed recordings
+      // Use setTimeout to allow state updates to flush before starting transcription
+      setTimeout(() => {
+        runTranscription();
+      }, 0);
     },
-    [onAudioSaved],
+    [onAudioSaved, runTranscription],
   );
 
   async function handleStartRecording() {
@@ -129,32 +165,7 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
   }
 
   async function handleTranscribe() {
-    if (!blobRef.current || isTranscribing) return;
-
-    setIsTranscribing(true);
-    setTranscriptionProgress(0);
-    setTranscriptionError(null);
-
-    try {
-      const provider = await selectSpeechProvider();
-      if (!provider) {
-        throw new Error("Transcription is not available on this device.");
-      }
-
-      const text = await provider.transcribe(blobRef.current, (progress) => {
-        setTranscriptionProgress(progress);
-      });
-
-      if (text && onTranscriptReady) {
-        onTranscriptReady(text);
-      }
-    } catch (err) {
-      setTranscriptionError(
-        err instanceof Error ? err.message : "Transcription failed.",
-      );
-    } finally {
-      setIsTranscribing(false);
-    }
+    await runTranscription();
   }
 
   function handlePlay() {

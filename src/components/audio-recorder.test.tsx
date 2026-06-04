@@ -1,10 +1,11 @@
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock db
+const mockSaveAudioBlob = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/db", () => ({
   getAudioBlob: vi.fn().mockResolvedValue(null),
-  saveAudioBlob: vi.fn().mockResolvedValue(undefined),
+  saveAudioBlob: (...args: unknown[]) => mockSaveAudioBlob(...args),
   deleteAudioBlob: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -16,11 +17,32 @@ vi.mock("@/lib/transcription", () => ({
   }),
 }));
 
+// Mock AudioRecordingService to simulate recording completion
+const mockStart = vi.fn();
+const mockStop = vi.fn();
+let capturedOnComplete: ((result: { blob: Blob; mimeType: string; duration: number }) => void) | null = null;
+
+vi.mock("@/lib/audio-recording", () => ({
+  MAX_RECORDING_DURATION_MS: 180000,
+  AudioRecordingService: class MockAudioRecordingService {
+    setOnStateChange(cb: (state: string) => void) { cb("recording"); }
+    setOnTimeUpdate() {}
+    setOnComplete(cb: (result: { blob: Blob; mimeType: string; duration: number }) => void) {
+      capturedOnComplete = cb;
+    }
+    setOnError() {}
+    start() { return mockStart(); }
+    stop() { return mockStop(); }
+  },
+}));
+
 import { AudioRecorder } from "@/components/audio-recorder";
 
 afterEach(() => {
   cleanup();
   mockTranscribe.mockReset();
+  mockSaveAudioBlob.mockReset();
+  capturedOnComplete = null;
 });
 
 describe("AudioRecorder", () => {
@@ -45,7 +67,6 @@ describe("AudioRecorder", () => {
   });
 
   it("shows Transcribe button when audio URL exists", async () => {
-    // Simulate audio URL by providing a blobId and mocking getAudioBlob
     const { getAudioBlob } = await import("@/lib/db");
     (getAudioBlob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       blob: new Blob(["audio"], { type: "audio/webm" }),
@@ -84,7 +105,7 @@ describe("AudioRecorder", () => {
     });
   });
 
-  it("calls onTranscriptReady when transcription succeeds", async () => {
+  it("calls onTranscriptReady when manual transcription succeeds", async () => {
     const { getAudioBlob } = await import("@/lib/db");
     (getAudioBlob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       blob: new Blob(["audio"], { type: "audio/webm" }),
@@ -163,8 +184,104 @@ describe("AudioRecorder", () => {
 
     await waitFor(() => {
       expect(onAudioDeleted).toHaveBeenCalled();
-      // After deletion, Transcribe should not be visible
       expect(screen.queryByRole("button", { name: /transcribe/i })).toBeNull();
+    });
+  });
+
+  it("auto-transcribes after a fresh recording completes", async () => {
+    mockTranscribe.mockResolvedValueOnce("Auto transcribed text");
+    mockSaveAudioBlob.mockResolvedValue(undefined);
+
+    const onTranscriptReady = vi.fn();
+    const onAudioSaved = vi.fn();
+
+    render(
+      <AudioRecorder
+        onAudioSaved={onAudioSaved}
+        onAudioDeleted={vi.fn()}
+        onTranscriptReady={onTranscriptReady}
+      />,
+    );
+
+    // Start recording
+    fireEvent.click(screen.getByRole("button", { name: /start recording/i }));
+
+    // Simulate recording completion
+    await act(async () => {
+      capturedOnComplete?.({
+        blob: new Blob(["fresh-audio"], { type: "audio/webm" }),
+        mimeType: "audio/webm",
+        duration: 5000,
+      });
+    });
+
+    // Allow setTimeout(0) to fire
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    await waitFor(() => {
+      expect(mockTranscribe).toHaveBeenCalled();
+      expect(onTranscriptReady).toHaveBeenCalledWith("Auto transcribed text");
+    });
+  });
+
+  it("does NOT auto-transcribe when loading an existing recording from IndexedDB", async () => {
+    const { getAudioBlob } = await import("@/lib/db");
+    (getAudioBlob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      blob: new Blob(["stored-audio"], { type: "audio/webm" }),
+    });
+
+    render(
+      <AudioRecorder
+        audioBlobId="existing-id"
+        onAudioSaved={vi.fn()}
+        onAudioDeleted={vi.fn()}
+        onTranscriptReady={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /transcribe/i })).toBeTruthy();
+    });
+
+    // Allow any microtasks to settle
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Transcribe should NOT have been called automatically
+    expect(mockTranscribe).not.toHaveBeenCalled();
+  });
+
+  it("surfaces model-load failure with a clear message", async () => {
+    const { getAudioBlob } = await import("@/lib/db");
+    (getAudioBlob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      blob: new Blob(["audio"], { type: "audio/webm" }),
+    });
+
+    mockTranscribe.mockRejectedValueOnce(
+      new Error("Model load failed: session creation error"),
+    );
+
+    render(
+      <AudioRecorder
+        audioBlobId="test-id"
+        onAudioSaved={vi.fn()}
+        onAudioDeleted={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /transcribe/i })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /transcribe/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Model load failed: session creation error"),
+      ).toBeTruthy();
     });
   });
 });

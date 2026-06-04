@@ -78,7 +78,7 @@ export class WhisperTinyProvider implements SpeechProvider {
       };
 
       this.worker.onerror = (err) => {
-        reject(new Error(err.message || "Worker error"));
+        reject(new Error(err.message || "Worker startup failed"));
         this.worker?.terminate();
         this.worker = null;
       };
