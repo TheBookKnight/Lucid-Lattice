@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
+import { AudioRecorder } from "@/components/audio-recorder";
 import { EmotionPicker } from "@/components/emotion-picker";
-import { clearEntries, getEntries, importEntries, saveEntry } from "@/lib/db";
+import { FavoriteButton } from "@/components/favorite-button";
+import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry, saveAudioBlob } from "@/lib/db";
 import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
-import { useSpeechCapture } from "@/hooks/use-speech-capture";
 import { useJournalStore } from "@/store/use-journal-store";
 import { requestPersistence } from "@/lib/requestPersistentStorage";
 import type { Entry } from "@/types/journal";
@@ -29,7 +30,8 @@ export function AppShell() {
   const [saveState, setSaveState] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [persistenceHint, setPersistenceHint] = useState<string | null>(null);
-  const speechBaseRef = useRef("");
+  const [audioBlobId, setAudioBlobId] = useState<string | undefined>(undefined);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   const refreshEntries = useCallback(async () => {
     const storedEntries = await getEntries();
@@ -45,32 +47,10 @@ export function AppShell() {
     });
   }, [refreshEntries]);
 
-  const onTranscript = useCallback(
-    (transcript: string) => {
-      const combinedTranscript = `${speechBaseRef.current} ${transcript}`.trim();
-      updateDraft("transcript", combinedTranscript);
-    },
-    [updateDraft],
-  );
-
-  const { clearError, errorMessage, isListening, isSupported, start, stop } = useSpeechCapture(onTranscript);
-
   const saveDisabled = useMemo(
     () => !draft.title.trim() || !draft.transcript.trim() || draft.emotions.length === 0,
     [draft],
   );
-
-  async function handleRecordToggle() {
-    clearError();
-
-    if (isListening) {
-      await stop();
-      return;
-    }
-
-    speechBaseRef.current = draft.transcript.trim();
-    await start();
-  }
 
   async function handleSave() {
     if (saveDisabled) {
@@ -78,9 +58,13 @@ export function AppShell() {
     }
 
     setIsSaving(true);
-    await saveEntry(draft);
+    const entryId = await saveEntry(draft);
+    if (audioBlobId) {
+      await updateEntry(entryId, { audioBlobId });
+    }
     setSaveState("Dream saved offline.");
     resetDraft();
+    setAudioBlobId(undefined);
     await refreshEntries();
     setIsSaving(false);
   }
@@ -177,10 +161,9 @@ export function AppShell() {
               and reflective—not predictive—correlation review.
             </p>
           </div>
-          <div className="grid gap-3 text-sm text-zinc-200 sm:grid-cols-3">
+          <div className="grid gap-3 text-sm text-zinc-200 sm:grid-cols-2">
             <div className="info-chip">Installable from Chrome and Safari home screens</div>
             <div className="info-chip">Works offline after the first visit</div>
-            <div className="info-chip">No account, backend, ads, or tracking</div>
           </div>
         </div>
       </section>
@@ -194,22 +177,11 @@ export function AppShell() {
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6 rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Quick capture</h2>
-                <p className="text-sm text-zinc-400">One-handed, low-light journaling with manual fallback when speech is unavailable.</p>
-              </div>
-              <button type="button" onClick={handleRecordToggle} className="record-button">
-                {isListening ? "Stop recording" : "Tap to speak"}
-              </button>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Quick capture</h2>
+              <p className="text-sm text-zinc-400">One-handed, low-light journaling. Record audio then tap Transcribe to generate text locally on your device.</p>
             </div>
 
-            <p className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
-              {isSupported
-                ? "Speech recognition uses the Web Speech API when available on this device."
-                : "Speech recognition is unavailable here, so manual entry stays fully supported."}
-            </p>
-            {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
             {saveState ? <p className="text-sm text-emerald-300">{saveState}</p> : null}
           </div>
 
@@ -234,13 +206,45 @@ export function AppShell() {
             </label>
           </div>
 
+          <AudioRecorder
+            audioBlobId={audioBlobId}
+            onAudioSaved={(id) => setAudioBlobId(id)}
+            onAudioDeleted={() => setAudioBlobId(undefined)}
+            onTranscriptReady={(text) => updateDraft("transcript", text)}
+          />
+
+          {process.env.NODE_ENV === "development" && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                id="test-inject-audio"
+                className="text-xs text-sky-400 hover:text-sky-300 underline cursor-pointer"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/chocolate.m4a");
+                    if (!res.ok) throw new Error("Failed to fetch chocolate.m4a");
+                    const blob = await res.blob();
+                    const id = "chocolate-audio-id";
+                    await saveAudioBlob(id, blob, "audio/mp4");
+                    setAudioBlobId(id);
+                    setSaveState("Test audio injected successfully.");
+                  } catch (err) {
+                    setSaveState(`Test audio injection failed: ${(err as Error).message}`);
+                  }
+                }}
+              >
+                [Dev] Inject Test Audio
+              </button>
+            </div>
+          )}
+
           <label className="space-y-2 text-sm text-zinc-300">
             <span>Transcript</span>
             <textarea
               className="field min-h-36"
               value={draft.transcript}
               onChange={(event) => updateDraft("transcript", event.target.value)}
-              placeholder="Describe the dream while it is fresh. This can be raw speech-to-text or manually corrected."
+              placeholder="Describe the dream while it is fresh. This can be transcribed from audio or typed manually."
             />
           </label>
 
@@ -348,17 +352,43 @@ export function AppShell() {
               </button>
             </div>
 
+            <div className="mt-3 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowFavoritesOnly(false)}
+                className={`text-sm ${!showFavoritesOnly ? "text-white font-medium" : "text-zinc-400"}`}
+              >
+                All Dreams
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFavoritesOnly(true)}
+                className={`text-sm ${showFavoritesOnly ? "text-white font-medium" : "text-zinc-400"}`}
+              >
+                ⭐ Favorites Only
+              </button>
+            </div>
+
             <div className="mt-4 space-y-3">
               {entries.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-white/10 bg-zinc-950/40 p-4 text-sm text-zinc-400">
                   Your saved entries will appear here for offline review.
                 </p>
               ) : (
-                entries.slice(0, 6).map((entry) => (
+                (showFavoritesOnly ? entries.filter((e) => e.isFavorite) : entries).slice(0, 6).map((entry) => (
                   <article key={entry.id} className="rounded-2xl bg-zinc-950/70 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-white">{entry.title || "Untitled dream"}</p>
+                        <FavoriteButton
+                          isFavorite={entry.isFavorite}
+                          onToggle={async () => {
+                            if (entry.id !== undefined) {
+                              await toggleFavorite(entry.id);
+                              await refreshEntries();
+                            }
+                          }}
+                        />
                       </div>
                       <time className="text-xs text-zinc-500">{formatTimestamp(entry.createdAt)}</time>
                     </div>

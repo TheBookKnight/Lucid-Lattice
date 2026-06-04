@@ -89,7 +89,7 @@ export function AnalyticsDashboard({
             className="h-2 w-full accent-fuchsia-400"
           />
         </label>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <label className="filter-toggle">
             <input
               type="checkbox"
@@ -105,6 +105,14 @@ export function AnalyticsDashboard({
               onChange={(event) => onFilterChange("nightmareOnly", event.target.checked)}
             />
             Nightmare only
+          </label>
+          <label className="filter-toggle">
+            <input
+              type="checkbox"
+              checked={filters.favoritesOnly}
+              onChange={(event) => onFilterChange("favoritesOnly", event.target.checked)}
+            />
+            Favorites only
           </label>
         </div>
       </div>

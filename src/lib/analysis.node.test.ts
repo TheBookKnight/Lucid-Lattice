@@ -19,6 +19,7 @@ const baseEntry: Entry = {
   ],
   notes: "Morgan was calm.",
   extractedEntities: extractEntities("Morgan stood near the river with a silver wolf."),
+  isFavorite: false,
 };
 
 describe("analysis helpers", () => {
@@ -63,6 +64,7 @@ describe("analysis helpers", () => {
         minIntensity: 6,
         lucidOnly: true,
         nightmareOnly: false,
+        favoritesOnly: false,
       }),
     ).toHaveLength(1);
   });
@@ -74,6 +76,7 @@ describe("analysis helpers", () => {
       minIntensity: 1,
       lucidOnly: false,
       nightmareOnly: false,
+      favoritesOnly: false,
     });
 
     expect(snapshot.totalEntries).toBe(1);
@@ -125,6 +128,7 @@ describe("extractPhrases", () => {
       minIntensity: 1,
       lucidOnly: false,
       nightmareOnly: false,
+      favoritesOnly: false,
     });
 
     expect(Array.isArray(snapshot.topPhrases)).toBe(true);
@@ -142,7 +146,7 @@ describe("exportCSV", () => {
   it("produces valid CSV with all entry fields as headers", () => {
     const csv = exportCSV([baseEntry]);
     const lines = csv.split("\n");
-    expect(lines[0]).toBe("id,createdAt,transcript,title,tags,sleepQuality,lucidDream,nightmare,recurringDream,emotions,notes,extractedEntities");
+    expect(lines[0]).toBe("id,createdAt,transcript,title,tags,sleepQuality,lucidDream,nightmare,recurringDream,emotions,notes,extractedEntities,isFavorite");
     expect(lines.length).toBe(2);
   });
 

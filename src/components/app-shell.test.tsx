@@ -15,15 +15,8 @@ vi.mock("@/lib/requestPersistentStorage", () => ({
   requestPersistence: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("@/hooks/use-speech-capture", () => ({
-  useSpeechCapture: () => ({
-    clearError: vi.fn(),
-    errorMessage: null,
-    isListening: false,
-    isSupported: false,
-    start: vi.fn(),
-    stop: vi.fn(),
-  }),
+vi.mock("@/lib/transcription", () => ({
+  selectSpeechProvider: vi.fn().mockResolvedValue(null),
 }));
 
 // Import AppShell after mocks are set up
@@ -127,5 +120,23 @@ describe("AppShell save validation", () => {
     const saveButton = screen.getByRole("button", { name: /save dream entry/i });
     fireEvent.click(saveButton);
     expect(saveEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppShell UI order", () => {
+  it("renders Audio Recording section between Tags and Transcript", () => {
+    render(<AppShell />);
+    const container = document.querySelector("main");
+    const html = container?.innerHTML ?? "";
+    const tagsIndex = html.indexOf("Tags");
+    const audioIndex = html.indexOf("Audio Recording");
+    const transcriptIndex = html.indexOf("Transcript");
+    expect(tagsIndex).toBeLessThan(audioIndex);
+    expect(audioIndex).toBeLessThan(transcriptIndex);
+  });
+
+  it("displays accurate copy about transcription", () => {
+    render(<AppShell />);
+    expect(screen.getByText(/tap Transcribe to generate text locally/i)).toBeTruthy();
   });
 });
