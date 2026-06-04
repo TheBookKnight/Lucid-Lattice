@@ -1,80 +1,102 @@
+import type { TranscriberInput, TranscriberMessage } from "@/workers/transcriber.worker";
+
 export interface SpeechProvider {
   isAvailable(): Promise<boolean>;
-  transcribe(audio: Blob): Promise<string>;
+  transcribe(
+    audio: Blob,
+    onProgress?: (progress: number, message: string) => void,
+  ): Promise<string>;
 }
 
-export class NativeSpeechProvider implements SpeechProvider {
+/**
+ * Convert an audio Blob to mono Float32 PCM at 16 kHz suitable for Whisper.
+ *
+ * We use OfflineAudioContext at 16 kHz to let the browser handle resampling.
+ * The recorded MIME type order in audio-recording.ts prefers audio/webm then
+ * audio/mp4 — both are decodable by AudioContext in Chrome and Safari
+ * respectively, ensuring cross-browser compatibility.
+ */
+export async function blobToFloat32Audio(blob: Blob): Promise<Float32Array> {
+  const arrayBuffer = await blob.arrayBuffer();
+
+  // Decode with a temporary AudioContext (uses device sample rate)
+  const tempCtx = new AudioContext();
+  const decoded = await tempCtx.decodeAudioData(arrayBuffer.slice(0));
+  await tempCtx.close();
+
+  // Resample to mono 16 kHz via OfflineAudioContext
+  const numFrames = Math.ceil(decoded.duration * 16000);
+  const offlineCtx = new OfflineAudioContext(1, numFrames, 16000);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+
+  const resampled = await offlineCtx.startRendering();
+  return resampled.getChannelData(0);
+}
+
+export class WhisperTinyProvider implements SpeechProvider {
+  private worker: Worker | null = null;
+
   async isAvailable(): Promise<boolean> {
+    // Available in browsers that support Web Workers and AudioContext
     if (typeof window === "undefined") return false;
-    const SpeechRecognition =
-      window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    return !!SpeechRecognition;
+    return typeof Worker !== "undefined" && typeof AudioContext !== "undefined";
   }
 
-  async transcribe(_audio: Blob): Promise<string> {
-    // The native Web Speech API works via live streaming (SpeechRecognition),
-    // not via post-hoc file transcription. For "Generate Transcript" from
-    // a recorded blob, we use the real-time capture already in use-speech-capture.
-    // This provider is used for capability detection and live transcription.
-    const SpeechRecognitionCtor =
-      typeof window !== "undefined"
-        ? window.SpeechRecognition ?? window.webkitSpeechRecognition
-        : null;
-
-    if (!SpeechRecognitionCtor) {
-      throw new Error("Speech recognition is not supported on this device.");
-    }
+  async transcribe(
+    audio: Blob,
+    onProgress?: (progress: number, message: string) => void,
+  ): Promise<string> {
+    const pcm = await blobToFloat32Audio(audio);
 
     return new Promise<string>((resolve, reject) => {
-      const recognition = new SpeechRecognitionCtor();
-      let result = "";
+      // Instantiate worker using Next.js-compatible URL pattern
+      this.worker = new Worker(
+        new URL("../workers/transcriber.worker.ts", import.meta.url),
+        { type: "module" },
+      );
 
-      // Attempt local-only when supported
-      try {
-        (recognition as unknown as Record<string, boolean>).localOnly = true;
-      } catch {
-        // localOnly not supported, continue
-      }
-
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const res = event.results[i];
-          if (res[0]) {
-            result += res[0].transcript + " ";
-          }
+      this.worker.onmessage = (event: MessageEvent<TranscriberMessage>) => {
+        const msg = event.data;
+        switch (msg.type) {
+          case "progress":
+            onProgress?.(msg.progress, msg.message);
+            break;
+          case "success":
+            resolve(msg.text);
+            this.worker?.terminate();
+            this.worker = null;
+            break;
+          case "error":
+            reject(new Error(msg.error));
+            this.worker?.terminate();
+            this.worker = null;
+            break;
         }
       };
 
-      recognition.onend = () => resolve(result.trim());
-      recognition.onerror = (event) =>
-        reject(new Error(event.error ?? "Speech recognition failed."));
+      this.worker.onerror = (err) => {
+        reject(new Error(err.message || "Worker error"));
+        this.worker?.terminate();
+        this.worker = null;
+      };
 
-      recognition.start();
+      const message: TranscriberInput = { type: "transcribe", audio: pcm };
+      this.worker.postMessage(message, [pcm.buffer]);
     });
   }
 }
 
-export class WhisperTinyProvider implements SpeechProvider {
-  async isAvailable(): Promise<boolean> {
-    // Whisper Tiny model download not yet implemented
-    return false;
-  }
-
-  async transcribe(_audio: Blob): Promise<string> {
-    throw new Error("Not implemented");
-  }
-}
-
+/**
+ * Select the appropriate speech provider for recorded blob transcription.
+ * Uses WhisperTinyProvider which runs locally via Web Worker.
+ * NativeSpeechProvider was removed — the Web Speech API cannot transcribe
+ * pre-recorded blobs, only live microphone input.
+ */
 export async function selectSpeechProvider(): Promise<SpeechProvider | null> {
-  const native = new NativeSpeechProvider();
-  if (await native.isAvailable()) return native;
-
   const whisper = new WhisperTinyProvider();
   if (await whisper.isAvailable()) return whisper;
-
   return null;
 }

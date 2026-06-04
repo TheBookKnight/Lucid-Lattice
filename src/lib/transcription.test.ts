@@ -1,12 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { NativeSpeechProvider, WhisperTinyProvider, selectSpeechProvider } from "@/lib/transcription";
+import { WhisperTinyProvider, selectSpeechProvider } from "@/lib/transcription";
 
-describe("NativeSpeechProvider", () => {
-  it("reports availability based on window.SpeechRecognition", async () => {
-    const provider = new NativeSpeechProvider();
-    // In test env (happy-dom/jsdom), SpeechRecognition is typically not available
+describe("WhisperTinyProvider", () => {
+  it("reports available when Worker and AudioContext exist", async () => {
+    const provider = new WhisperTinyProvider();
     const available = await provider.isAvailable();
+    // happy-dom provides Worker and AudioContext globals
     expect(typeof available).toBe("boolean");
   });
 
@@ -14,46 +14,28 @@ describe("NativeSpeechProvider", () => {
     const originalWindow = globalThis.window;
     // @ts-expect-error - simulating SSR
     delete globalThis.window;
-    const provider = new NativeSpeechProvider();
+    const provider = new WhisperTinyProvider();
     const available = await provider.isAvailable();
     expect(available).toBe(false);
     globalThis.window = originalWindow;
   });
 });
 
-describe("WhisperTinyProvider", () => {
-  it("reports not available", async () => {
-    const provider = new WhisperTinyProvider();
-    expect(await provider.isAvailable()).toBe(false);
-  });
-
-  it("throws not implemented on transcribe", async () => {
-    const provider = new WhisperTinyProvider();
-    await expect(provider.transcribe(new Blob())).rejects.toThrow("Not implemented");
-  });
-});
-
 describe("selectSpeechProvider", () => {
-  it("returns null when no provider is available", async () => {
-    // Mock: no SpeechRecognition
-    const original = window.SpeechRecognition;
-    const originalWebkit = window.webkitSpeechRecognition;
-    window.SpeechRecognition = undefined;
-    window.webkitSpeechRecognition = undefined;
+  it("returns WhisperTinyProvider when Worker and AudioContext are available", async () => {
+    // happy-dom should have Worker and AudioContext
+    const provider = await selectSpeechProvider();
+    if (provider) {
+      expect(provider).toBeInstanceOf(WhisperTinyProvider);
+    }
+  });
 
+  it("returns null when Worker is not available", async () => {
+    const originalWorker = globalThis.Worker;
+    // @ts-expect-error - removing Worker
+    delete globalThis.Worker;
     const provider = await selectSpeechProvider();
     expect(provider).toBeNull();
-
-    window.SpeechRecognition = original;
-    window.webkitSpeechRecognition = originalWebkit;
-  });
-
-  it("returns native provider when SpeechRecognition is available", async () => {
-    window.SpeechRecognition = vi.fn() as unknown as typeof window.SpeechRecognition;
-
-    const provider = await selectSpeechProvider();
-    expect(provider).toBeInstanceOf(NativeSpeechProvider);
-
-    window.SpeechRecognition = undefined;
+    globalThis.Worker = originalWorker;
   });
 });

@@ -26,15 +26,19 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionProgress, setTranscriptionProgress] = useState(0);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const serviceRef = useRef<AudioRecordingService | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const blobRef = useRef<Blob | null>(null);
 
   // Load existing audio blob
   useEffect(() => {
     if (!audioBlobId) {
       setAudioUrl(null);
+      blobRef.current = null;
       return;
     }
 
@@ -43,6 +47,7 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       if (record && !revoked) {
         const url = URL.createObjectURL(record.blob);
         setAudioUrl(url);
+        blobRef.current = record.blob;
       }
     });
 
@@ -59,33 +64,18 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       await saveAudioBlob(id, result.blob, result.mimeType);
       const url = URL.createObjectURL(result.blob);
       setAudioUrl(url);
+      blobRef.current = result.blob;
       setIsRecording(false);
       setElapsedMs(0);
+      setTranscriptionError(null);
       onAudioSaved(id);
-
-      // Auto-transcribe the recording
-      if (onTranscriptReady) {
-        setIsTranscribing(true);
-        try {
-          const provider = await selectSpeechProvider();
-          if (provider) {
-            const text = await provider.transcribe(result.blob);
-            if (text) {
-              onTranscriptReady(text);
-            }
-          }
-        } catch {
-          // Transcription is best-effort; don't block the recording flow
-        } finally {
-          setIsTranscribing(false);
-        }
-      }
     },
-    [onAudioSaved, onTranscriptReady],
+    [onAudioSaved],
   );
 
   async function handleStartRecording() {
     setError(null);
+    setTranscriptionError(null);
     const service = new AudioRecordingService();
     serviceRef.current = service;
 
@@ -118,6 +108,8 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
     }
+    blobRef.current = null;
+    setTranscriptionError(null);
 
     await handleStartRecording();
   }
@@ -131,6 +123,37 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
+    }
+    blobRef.current = null;
+    setTranscriptionError(null);
+  }
+
+  async function handleTranscribe() {
+    if (!blobRef.current || isTranscribing) return;
+
+    setIsTranscribing(true);
+    setTranscriptionProgress(0);
+    setTranscriptionError(null);
+
+    try {
+      const provider = await selectSpeechProvider();
+      if (!provider) {
+        throw new Error("Transcription is not available on this device.");
+      }
+
+      const text = await provider.transcribe(blobRef.current, (progress) => {
+        setTranscriptionProgress(progress);
+      });
+
+      if (text && onTranscriptReady) {
+        onTranscriptReady(text);
+      }
+    } catch (err) {
+      setTranscriptionError(
+        err instanceof Error ? err.message : "Transcription failed.",
+      );
+    } finally {
+      setIsTranscribing(false);
     }
   }
 
@@ -157,6 +180,7 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
   }
 
   const remainingMs = MAX_RECORDING_DURATION_MS - elapsedMs;
+  const canTranscribe = !!audioUrl && !isRecording && !isTranscribing;
 
   return (
     <div className="space-y-3 rounded-2xl border border-white/10 bg-zinc-950/60 p-4">
@@ -195,6 +219,9 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
             <button type="button" onClick={handleRestart} className="secondary-button text-sm">
               Restart
             </button>
+            <button type="button" onClick={handleTranscribe} disabled={!canTranscribe} className="primary-button text-sm">
+              Transcribe
+            </button>
             <button type="button" onClick={handleReRecord} className="secondary-button text-sm text-rose-200">
               Re-record
             </button>
@@ -206,7 +233,18 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       </div>
 
       {isTranscribing && (
-        <p className="text-xs text-sky-300">Transcribing audio…</p>
+        <div className="space-y-1">
+          <p className="text-xs text-sky-300">
+            Transcribing locally on your device: {transcriptionProgress}%
+          </p>
+          <p className="text-xs text-zinc-500">
+            Want instant, hardware-accelerated transcription? Download our native App Store version for a premium experience!
+          </p>
+        </div>
+      )}
+
+      {transcriptionError && (
+        <p className="text-sm text-rose-300">{transcriptionError}</p>
       )}
 
       {audioUrl && (

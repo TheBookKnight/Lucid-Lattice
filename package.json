@@ -13,6 +13,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "compromise": "14.15.0",
     "dexie": "4.4.2",
     "natural": "8.1.1",

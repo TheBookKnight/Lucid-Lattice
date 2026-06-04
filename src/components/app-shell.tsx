@@ -179,7 +179,7 @@ export function AppShell() {
           <div className="space-y-3">
             <div>
               <h2 className="text-xl font-semibold text-white">Quick capture</h2>
-              <p className="text-sm text-zinc-400">One-handed, low-light journaling. Record audio and it will be auto-transcribed.</p>
+              <p className="text-sm text-zinc-400">One-handed, low-light journaling. Record audio then tap Transcribe to generate text locally on your device.</p>
             </div>
 
             {saveState ? <p className="text-sm text-emerald-300">{saveState}</p> : null}
@@ -206,13 +206,20 @@ export function AppShell() {
             </label>
           </div>
 
+          <AudioRecorder
+            audioBlobId={audioBlobId}
+            onAudioSaved={(id) => setAudioBlobId(id)}
+            onAudioDeleted={() => setAudioBlobId(undefined)}
+            onTranscriptReady={(text) => updateDraft("transcript", text)}
+          />
+
           <label className="space-y-2 text-sm text-zinc-300">
             <span>Transcript</span>
             <textarea
               className="field min-h-36"
               value={draft.transcript}
               onChange={(event) => updateDraft("transcript", event.target.value)}
-              placeholder="Describe the dream while it is fresh. This can be raw speech-to-text or manually corrected."
+              placeholder="Describe the dream while it is fresh. This can be transcribed from audio or typed manually."
             />
           </label>
 
@@ -267,13 +274,6 @@ export function AppShell() {
           </div>
 
           <EmotionPicker />
-
-          <AudioRecorder
-            audioBlobId={audioBlobId}
-            onAudioSaved={(id) => setAudioBlobId(id)}
-            onAudioDeleted={() => setAudioBlobId(undefined)}
-            onTranscriptReady={(text) => updateDraft("transcript", text)}
-          />
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" onClick={handleSave} disabled={isSaving || saveDisabled} className="primary-button">
