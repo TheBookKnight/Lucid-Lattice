@@ -1,7 +1,36 @@
 import { env, pipeline, type AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 
+// Extract origin from self.location or the blob URL if loaded as a blob
+let origin = "";
+if (typeof self !== "undefined" && self.location) {
+  const href = self.location.href;
+  if (href.startsWith("blob:")) {
+    try {
+      const match = href.match(/blob:(https?:\/\/[^\/]+)/);
+      if (match) {
+        origin = match[1];
+      } else {
+        origin = new URL(href.slice(5)).origin;
+      }
+    } catch {
+      origin = self.location.origin;
+    }
+  } else {
+    origin = self.location.origin;
+  }
+}
+
+if (!origin || origin === "null") {
+  origin = "";
+}
+
 // Prevent model downloads from local filesystem (always use CDN)
 env.allowLocalModels = false;
+
+// Configure Hugging Face transformers to fetch models locally from our public folder.
+// This serves them same-origin, avoiding CORP/COEP issues.
+env.remoteHost = `${origin}/`;
+env.remotePathTemplate = "models/{model}/";
 
 // Disable WASM caching to prevent the library from loading the WASM factory as a blob URL.
 // When loaded as a blob URL, relative URL resolution inside the factory throws "Invalid URL".
@@ -11,32 +40,6 @@ env.useWasmCache = false;
 // This avoids dynamic import failures of nonexistent .asyncify.mjs files on CDN,
 // keeps all speech transcription logic fully self-hosted, and allows offline operation.
 if (env.backends.onnx.wasm) {
-  // Construct absolute URLs to prevent URL resolution errors when the worker
-  // is loaded via a blob URL (common in bundlers). If self.location.origin is "null"
-  // because of the blob URL, we extract the origin from the inner URL in location.href.
-  let origin = "";
-  if (typeof self !== "undefined" && self.location) {
-    const href = self.location.href;
-    if (href.startsWith("blob:")) {
-      try {
-        const match = href.match(/blob:(https?:\/\/[^\/]+)/);
-        if (match) {
-          origin = match[1];
-        } else {
-          origin = new URL(href.slice(5)).origin;
-        }
-      } catch {
-        origin = self.location.origin;
-      }
-    } else {
-      origin = self.location.origin;
-    }
-  }
-
-  if (!origin || origin === "null") {
-    origin = "";
-  }
-
   const originalPaths = env.backends.onnx.wasm.wasmPaths;
   const isAsyncify = typeof originalPaths === "object" && 
     originalPaths?.mjs && 
@@ -85,7 +88,7 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
       "onnx-community/whisper-tiny.en",
       {
         device: "wasm",
-        dtype: "fp32",
+        dtype: "q4",
         progress_callback: (data: { progress?: number; status?: string }) => {
           if (typeof data.progress === "number") {
             self.postMessage({
