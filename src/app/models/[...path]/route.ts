@@ -9,15 +9,18 @@ export async function GET(
   const url = `https://huggingface.co/${filePath}${request.nextUrl.search}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { redirect: "follow" });
     const headers = new Headers();
     
     // Copy essential headers
     const contentType = res.headers.get("content-type");
-    if (contentType) headers.set("content-type", contentType);
+    headers.set("content-type", contentType || "application/octet-stream");
     
     const contentLength = res.headers.get("content-length");
     if (contentLength) headers.set("content-length", contentLength);
+    
+    // Cache models aggressively in the browser
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
     
     // Set CORS headers
     headers.set("Access-Control-Allow-Origin", "*");
@@ -27,7 +30,7 @@ export async function GET(
       status: res.status,
       headers,
     });
-  } catch (error) {
+  } catch {
     return new Response("Failed to fetch model file", { status: 500 });
   }
 }

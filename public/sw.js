@@ -1,4 +1,4 @@
-const CACHE_NAME = "lucid-lattice-v3";
+const CACHE_NAME = "lucid-lattice-v4";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -26,6 +26,11 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
 
   if (request.method !== "GET" || !request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  const url = new URL(request.url);
+  if (url.pathname.startsWith("/models/")) {
     return;
   }
 
