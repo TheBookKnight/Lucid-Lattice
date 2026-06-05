@@ -27,6 +27,11 @@ if (!origin || origin === "null") {
 // Prevent model downloads from local filesystem (always use CDN)
 env.allowLocalModels = false;
 
+// Configure Hugging Face transformers to fetch models locally from our public folder (via Next.js rewrite proxy).
+// This serves them same-origin, avoiding CORS and CORP/COEP issues.
+env.remoteHost = `${origin}/`;
+env.remotePathTemplate = "models/{model}/resolve/main/";
+
 
 
 // Disable WASM caching to prevent the library from loading the WASM factory as a blob URL.

@@ -47,7 +47,7 @@ To support in-browser speech recognition, we utilize the **4-bit quantized versi
 ### Caching & Offline Architecture
 
 To deliver an offline-first experience while complying with hosting limitations:
-- **Hugging Face Hub + Browser Cache:** The model files are fetched directly from the Hugging Face CDN on first run. `@huggingface/transformers` automatically caches these files in the browser's **Cache Storage API**. On subsequent loads, the app reads the model from the local cache, making transcription **100% offline capable**.
+- **Next.js Rewrite Proxy + Browser Cache:** The model files are fetched via a local Next.js rewrite route (`/models/*`) which proxies the Hugging Face CDN. This makes all fetches **same-origin**, completely eliminating browser CORS blocks on the client side. Once fetched, `@huggingface/transformers` automatically caches these files in the browser's **Cache Storage API**. On subsequent loads, the app reads the model from the local cache, making transcription **100% offline capable**.
 - **Cloudflare File Size Compatibility:** Storing the model files in the browser cache avoids committing large binary files to Git and satisfies Cloudflare Pages' asset limit of **25MB per file** (which would otherwise block the ~83MB model decoder).
 - **Single-Threaded Execution:** To allow the browser to fetch model files from Hugging Face without CORP/COEP blocking (especially in Safari), cross-origin isolation headers are disabled. ONNX Runtime runs in single-threaded mode, which is highly compatible and performs efficiently for a model of this size.
 
