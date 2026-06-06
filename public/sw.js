@@ -1,4 +1,4 @@
-const CACHE_NAME = "lucid-lattice-v4";
+const CACHE_NAME = "lucid-lattice-v5";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",

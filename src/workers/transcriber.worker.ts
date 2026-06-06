@@ -27,20 +27,10 @@ if (!origin || origin === "null") {
 // Prevent model downloads from local filesystem (always use CDN)
 env.allowLocalModels = false;
 
-// Configure Hugging Face transformers to fetch models directly from the Hugging Face CDN.
-env.remoteHost = "https://huggingface.co/";
-env.remotePathTemplate = "{model}/resolve/main/";
-
-// Custom fetch to bypass browser's CORS cache bug for Hugging Face CDN
-env.fetch = (url, options) => {
-  const urlString = typeof url === "string" ? url : url.toString();
-  if (urlString.includes("huggingface.co")) {
-    const separator = urlString.includes("?") ? "&" : "?";
-    const corsBustUrl = `${urlString}${separator}cors-bust=${Date.now()}`;
-    return fetch(corsBustUrl, options);
-  }
-  return fetch(url, options);
-};
+// Configure Hugging Face transformers to fetch models locally from our public folder (via Next.js rewrite proxy).
+// This serves them same-origin, avoiding CORS and CORP/COEP issues.
+env.remoteHost = `${origin}/`;
+env.remotePathTemplate = "models/{model}/resolve/main/";
 
 
 

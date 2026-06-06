@@ -7,3 +7,8 @@ declare module "natural/lib/natural/util/stopwords" {
 
   export default naturalStopwords;
 }
+
+interface CloudflareEnv {
+  MODELS_BUCKET?: import("@cloudflare/workers-types").R2Bucket;
+}
+
