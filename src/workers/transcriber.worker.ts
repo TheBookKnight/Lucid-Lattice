@@ -103,6 +103,17 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
       },
     );
   } catch (err) {
+    // If loading fails (e.g. due to corrupted/truncated cache), clear the cache so next load gets a fresh download
+    try {
+      if (typeof caches !== "undefined") {
+        await caches.delete("transformers-cache");
+        if (env.cacheKey) {
+          await caches.delete(env.cacheKey);
+        }
+      }
+    } catch (cacheErr) {
+      console.error("Failed to clear cache after model load error:", cacheErr);
+    }
     const message = err instanceof Error ? err.message : "Unknown model load error";
     throw new Error(`Model load failed: ${message}`);
   }
