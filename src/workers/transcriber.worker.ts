@@ -38,29 +38,19 @@ env.remotePathTemplate = "models/{model}/resolve/main/";
 // When loaded as a blob URL, relative URL resolution inside the factory throws "Invalid URL".
 env.useWasmCache = false;
 
-// Configure ONNX Runtime WASM backend to use local files from our public folder.
-// This avoids dynamic import failures of nonexistent .asyncify.mjs files on CDN,
-// keeps all speech transcription logic fully self-hosted, and allows offline operation.
+// Configure ONNX Runtime WASM backend to use our self-hosted WASM files from /public/wasm/.
+// Use the JSPI (JavaScript Promise Integration) variant - a completely different async mechanism
+// from asyncify (global state machine, failed in production) and non-asyncify (also failed).
+// JSPI is natively supported in Chrome 126+ and handles async WASM operations without the
+// asyncify global state corruption issue.
 if (env.backends.onnx.wasm) {
-  const originalPaths = env.backends.onnx.wasm.wasmPaths;
-  const isAsyncify = typeof originalPaths === "object" && 
-    originalPaths?.mjs && 
-    String(originalPaths.mjs).includes("asyncify");
-
   env.backends.onnx.wasm.wasmPaths = {
-    // Specific filename mappings
-    'ort-wasm-simd-threaded.wasm': `${origin}/wasm/ort-wasm-simd-threaded.wasm`,
-    'ort-wasm-simd-threaded.mjs': `${origin}/wasm/ort-wasm-simd-threaded.mjs`,
-    'ort-wasm-simd-threaded.asyncify.wasm': `${origin}/wasm/ort-wasm-simd-threaded.asyncify.wasm`,
-    'ort-wasm-simd-threaded.asyncify.mjs': `${origin}/wasm/ort-wasm-simd-threaded.asyncify.mjs`,
-    // Fallback keys mapped based on the environment detection
-    wasm: isAsyncify
-      ? `${origin}/wasm/ort-wasm-simd-threaded.asyncify.wasm`
-      : `${origin}/wasm/ort-wasm-simd-threaded.wasm`,
-    mjs: isAsyncify
-      ? `${origin}/wasm/ort-wasm-simd-threaded.asyncify.mjs`
-      : `${origin}/wasm/ort-wasm-simd-threaded.mjs`,
+    mjs: `${origin}/wasm/ort-wasm-simd-threaded.jspi.mjs`,
+    wasm: `${origin}/wasm/ort-wasm-simd-threaded.jspi.wasm`,
   } as Record<string, string>;
+
+  // Pin to single-threaded mode.
+  env.backends.onnx.wasm.numThreads = 1;
 }
 
 export type TranscriberMessage =
@@ -75,6 +65,65 @@ export type TranscriberInput = {
 
 let pipelineInstance: AutomaticSpeechRecognitionPipeline | null = null;
 
+/** Fetch the COMPLETE decoder ONNX file and verify its integrity before ORT sees it. */
+async function runModelIntegrityCheck(): Promise<void> {
+  const EXPECTED_BYTES = 86_712_166;
+  const decoderUrl = `${origin}/models/onnx-community/whisper-tiny.en/resolve/main/onnx/decoder_model_merged_q4.onnx`;
+  try {
+    console.log("[DIAG] crossOriginIsolated:", (self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated);
+    console.log("[DIAG] ORT numThreads:", env.backends?.onnx?.wasm?.numThreads);
+    console.log("[DIAG] ORT wasmPaths:", JSON.stringify(env.backends?.onnx?.wasm?.wasmPaths));
+    console.log("[DIAG] Fetching FULL decoder model from:", decoderUrl);
+
+    const resp = await fetch(decoderUrl);
+    const contentLength = resp.headers.get("content-length");
+    console.log("[DIAG] Response status:", resp.status, "Content-Length header:", contentLength);
+
+    // Read ALL chunks and tally total bytes received
+    const reader = resp.body!.getReader();
+    let totalBytes = 0;
+    let firstChunk: Uint8Array | null = null;
+    let lastChunk: Uint8Array | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (firstChunk === null) firstChunk = value;
+      lastChunk = value;
+      totalBytes += value.length;
+    }
+
+    console.log(`[DIAG] Total bytes received: ${totalBytes} (expected ${EXPECTED_BYTES})`);
+    if (totalBytes === EXPECTED_BYTES) {
+      console.log("[DIAG] ✅ Byte count matches — no truncation detected");
+    } else {
+      console.error(`[DIAG] ❌ TRUNCATION: got ${totalBytes}, expected ${EXPECTED_BYTES} (missing ${EXPECTED_BYTES - totalBytes} bytes)`);
+    }
+
+    if (firstChunk) {
+      const first8 = Array.from(firstChunk.slice(0, 8)).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+      console.log(`[DIAG] First 8 bytes: ${first8}`);
+      if (firstChunk[0] === 0x08 && firstChunk[1] === 0x09) {
+        console.log("[DIAG] ✅ First bytes = valid ONNX protobuf (ir_version:9)");
+      } else {
+        console.error("[DIAG] ❌ First bytes do NOT match expected ONNX magic:", first8);
+      }
+    }
+    if (lastChunk) {
+      const last8 = Array.from(lastChunk.slice(-8)).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+      console.log(`[DIAG] Last chunk size: ${lastChunk.length}, last 8 bytes: ${last8}`);
+      const allZero = lastChunk.slice(-8).every((b) => b === 0);
+      if (allZero) {
+        console.error("[DIAG] ❌ Last 8 bytes are ALL ZEROS — file likely truncated or corrupted!");
+      } else {
+        console.log("[DIAG] ✅ Last bytes look non-zero (file likely complete)");
+      }
+    }
+  } catch (e) {
+    console.error("[DIAG] Integrity check failed with exception:", e);
+  }
+}
+
 async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
   if (pipelineInstance) return pipelineInstance;
 
@@ -83,6 +132,9 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
     progress: 0,
     message: "Loading transcription model…",
   } satisfies TranscriberMessage);
+
+  // Run pre-flight check so we can see in DevTools what the Worker actually receives.
+  await runModelIntegrityCheck();
 
   try {
     pipelineInstance = await pipeline(
