@@ -23,9 +23,11 @@ export async function GET(
         const headers = new Headers();
         headers.set("Content-Type", "application/octet-stream");
         headers.set("Content-Length", object.size.toString());
-        headers.set("Cache-Control", "public, max-age=31536000, immutable");
+        // 24-hour cache — intentionally NOT "immutable" so model updates can propagate
+        headers.set("Cache-Control", "public, max-age=86400");
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+        headers.set("X-Model-Source", "r2");
 
         return new Response(object.body, {
           headers,
@@ -51,9 +53,12 @@ export async function GET(
     const contentLength = res.headers.get("content-length");
     if (contentLength) headers.set("content-length", contentLength);
 
-    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    // Never cache HuggingFace fallback responses — they may be wrong versions.
+    // The browser should always re-validate through our Worker (which checks R2 first).
+    headers.set("Cache-Control", "no-store");
     headers.set("Access-Control-Allow-Origin", "*");
     headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("X-Model-Source", "huggingface-fallback");
 
     return new Response(res.body, {
       status: res.status,

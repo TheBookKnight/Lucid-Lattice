@@ -16,5 +16,8 @@
 			"binding": "MODELS_BUCKET",
 			"bucket_name": "lucid-lattice-models"
 		}
-	]
+	],
+	"ai": {
+		"binding": "AI"
+	}
 }

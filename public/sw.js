@@ -1,4 +1,4 @@
-const CACHE_NAME = "lucid-lattice-v5";
+const CACHE_NAME = "lucid-lattice-v6";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -30,7 +30,9 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/models/")) {
+  // Models and WASM files are large/streaming — skip SW caching for both.
+  // Models are fetched via R2 proxy; WASM files are static Cloudflare assets.
+  if (url.pathname.startsWith("/models/") || url.pathname.startsWith("/wasm/")) {
     return;
   }
 
@@ -54,7 +56,9 @@ self.addEventListener("fetch", (event) => {
       const networkFetch = fetch(request)
         .then((response) => {
           if (response.ok) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+            // Clone BEFORE returning so the original body isn't locked when we try to cache.
+            const toCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, toCache));
           }
           return response;
         })

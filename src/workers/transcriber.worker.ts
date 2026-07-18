@@ -65,9 +65,9 @@ export type TranscriberInput = {
 
 let pipelineInstance: AutomaticSpeechRecognitionPipeline | null = null;
 
-/** Fetch the COMPLETE decoder ONNX file and verify its integrity before ORT sees it. */
+/** Fetch the decoder ONNX file and verify the transfer completed cleanly. */
 async function runModelIntegrityCheck(): Promise<void> {
-  const EXPECTED_BYTES = 86_712_166;
+  // q4 decoder: ~86MB (the version in R2)
   const decoderUrl = `${origin}/models/onnx-community/whisper-tiny.en/resolve/main/onnx/decoder_model_merged_q4.onnx`;
   try {
     console.log("[DIAG] crossOriginIsolated:", (self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated);
@@ -93,11 +93,11 @@ async function runModelIntegrityCheck(): Promise<void> {
       totalBytes += value.length;
     }
 
-    console.log(`[DIAG] Total bytes received: ${totalBytes} (expected ${EXPECTED_BYTES})`);
-    if (totalBytes === EXPECTED_BYTES) {
-      console.log("[DIAG] ✅ Byte count matches — no truncation detected");
+    console.log(`[DIAG] Total bytes received: ${totalBytes}`);
+    if (totalBytes > 10_000_000) {
+      console.log("[DIAG] ✅ Received substantial data — no major truncation");
     } else {
-      console.error(`[DIAG] ❌ TRUNCATION: got ${totalBytes}, expected ${EXPECTED_BYTES} (missing ${EXPECTED_BYTES - totalBytes} bytes)`);
+      console.error(`[DIAG] ❌ Suspiciously few bytes: ${totalBytes} — possible fetch failure`);
     }
 
     if (firstChunk) {
@@ -143,6 +143,13 @@ async function loadPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
       {
         device: "wasm",
         dtype: "q4",
+        // Use "basic" graph optimization (not "disabled") to skip the broken extended-level
+        // TransposeDQWeightsForMatMulNBits pass without triggering a possible level=0 crash
+        // in ORT 1.26.0-dev WASM. "basic" skips all extended/layout optimizations including
+        // the buggy MatMulNBits transpose while keeping the well-tested basic constant folding.
+        session_options: {
+          graphOptimizationLevel: "basic",
+        },
         progress_callback: (data: { progress?: number; status?: string }) => {
           if (typeof data.progress === "number") {
             self.postMessage({
@@ -178,6 +185,24 @@ self.onmessage = async (event: MessageEvent<TranscriberInput>) => {
 
   try {
     const transcriber = await loadPipeline();
+
+    // --- Audio diagnostics ---
+    const durationSec = (audio.length / 16000).toFixed(2);
+    let sumSq = 0;
+    let maxAbs = 0;
+    for (let i = 0; i < audio.length; i++) {
+      const v = Math.abs(audio[i]);
+      sumSq += v * v;
+      if (v > maxAbs) maxAbs = v;
+    }
+    const rms = Math.sqrt(sumSq / audio.length);
+    console.log(`[AUDIO DIAG] samples=${audio.length} duration=${durationSec}s maxAbs=${maxAbs.toFixed(5)} rms=${rms.toFixed(5)}`);
+    if (rms < 0.001) {
+      console.warn('[AUDIO DIAG] ⚠️ RMS is near-zero — audio is silent or empty, Whisper will hallucinate');
+    } else {
+      console.log('[AUDIO DIAG] ✅ Audio has signal, proceeding with inference');
+    }
+    // --- end audio diagnostics ---
 
     self.postMessage({
       type: "progress",

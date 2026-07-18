@@ -1,4 +1,4 @@
-import type { TranscriberInput, TranscriberMessage } from "@/workers/transcriber.worker";
+// Note: transcriber.worker is kept for reference but no longer used by CloudflareAIProvider.
 
 export interface SpeechProvider {
   isAvailable(): Promise<boolean>;
@@ -36,67 +36,65 @@ export async function blobToFloat32Audio(blob: Blob): Promise<Float32Array> {
   return resampled.getChannelData(0);
 }
 
-export class WhisperTinyProvider implements SpeechProvider {
-  private worker: Worker | null = null;
-
+export class CloudflareAIProvider implements SpeechProvider {
   async isAvailable(): Promise<boolean> {
-    // Available in browsers that support Web Workers and AudioContext
     if (typeof window === "undefined") return false;
-    return typeof Worker !== "undefined" && typeof AudioContext !== "undefined";
+    return typeof window.fetch !== "undefined";
   }
 
   async transcribe(
     audio: Blob,
     onProgress?: (progress: number, message: string) => void,
   ): Promise<string> {
-    const pcm = await blobToFloat32Audio(audio);
+    onProgress?.(10, "Sending audio…");
 
-    return new Promise<string>((resolve, reject) => {
-      // Instantiate worker using Next.js-compatible URL pattern
-      this.worker = new Worker(
-        new URL("../workers/transcriber.worker.ts", import.meta.url),
-        { type: "module" },
-      );
+    // Cloudflare AI Whisper expects encoded audio file bytes (WebM, MP4, WAV, etc.)
+    // — NOT raw PCM floats. Send the Blob's bytes directly; Cloudflare decodes it.
+    const audioBuffer = await audio.arrayBuffer();
 
-      this.worker.onmessage = (event: MessageEvent<TranscriberMessage>) => {
-        const msg = event.data;
-        switch (msg.type) {
-          case "progress":
-            onProgress?.(msg.progress, msg.message);
-            break;
-          case "success":
-            resolve(msg.text);
-            this.worker?.terminate();
-            this.worker = null;
-            break;
-          case "error":
-            reject(new Error(msg.error));
-            this.worker?.terminate();
-            this.worker = null;
-            break;
-        }
-      };
+    onProgress?.(30, "Transcribing…");
 
-      this.worker.onerror = (err) => {
-        reject(new Error(err.message || "Worker startup failed"));
-        this.worker?.terminate();
-        this.worker = null;
-      };
+    let response: Response;
+    try {
+      response = await fetch("/api/transcribe", {
+        method: "POST",
+        // Use the blob's actual MIME type so the server can pass it along.
+        headers: { "Content-Type": audio.type || "audio/webm" },
+        body: audioBuffer,
+      });
+    } catch {
+      // Network failure (offline, DNS failure, etc.)
+      throw new OfflineError();
+    }
 
-      const message: TranscriberInput = { type: "transcribe", audio: pcm };
-      this.worker.postMessage(message, [pcm.buffer]);
-    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error((body as { error?: string }).error ?? "Transcription failed.");
+    }
+
+    onProgress?.(90, "Finishing…");
+    const data = (await response.json()) as { text: string };
+    onProgress?.(100, "Done");
+    return data.text ?? "";
+  }
+}
+
+/** Thrown when transcription fails because the device is offline. */
+export class OfflineError extends Error {
+  constructor() {
+    super("No internet connection. Connect to WiFi and tap Transcribe to try again.");
+    this.name = "OfflineError";
   }
 }
 
 /**
  * Select the appropriate speech provider for recorded blob transcription.
- * Uses WhisperTinyProvider which runs locally via Web Worker.
- * NativeSpeechProvider was removed — the Web Speech API cannot transcribe
- * pre-recorded blobs, only live microphone input.
+ * Uses CloudflareAIProvider which runs Whisper server-side on Cloudflare's GPU.
+ * Requires an internet connection; throws OfflineError when offline.
  */
 export async function selectSpeechProvider(): Promise<SpeechProvider | null> {
-  const whisper = new WhisperTinyProvider();
-  if (await whisper.isAvailable()) return whisper;
+  const provider = new CloudflareAIProvider();
+  if (await provider.isAvailable()) return provider;
   return null;
 }
+
