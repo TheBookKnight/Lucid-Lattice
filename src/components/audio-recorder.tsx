@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AudioRecordingService, MAX_RECORDING_DURATION_MS, type RecordingResult } from "@/lib/audio-recording";
 import { deleteAudioBlob, getAudioBlob, saveAudioBlob } from "@/lib/db";
-import { selectSpeechProvider } from "@/lib/transcription";
+import { OfflineError, selectSpeechProvider } from "@/lib/transcription";
 
 interface AudioRecorderProps {
   audioBlobId?: string;
@@ -28,6 +28,7 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionProgress, setTranscriptionProgress] = useState(0);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const serviceRef = useRef<AudioRecordingService | null>(null);
@@ -41,6 +42,7 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
     setIsTranscribing(true);
     setTranscriptionProgress(0);
     setTranscriptionError(null);
+    setIsOffline(false);
 
     try {
       const provider = await selectSpeechProvider();
@@ -56,9 +58,13 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
         onTranscriptReady(text);
       }
     } catch (err) {
-      setTranscriptionError(
-        err instanceof Error ? err.message : "Transcription failed.",
-      );
+      if (err instanceof OfflineError) {
+        setIsOffline(true);
+      } else {
+        setTranscriptionError(
+          err instanceof Error ? err.message : "Transcription failed.",
+        );
+      }
     } finally {
       setIsTranscribing(false);
     }
@@ -246,16 +252,19 @@ export function AudioRecorder({ audioBlobId, onAudioSaved, onAudioDeleted, onTra
       {isTranscribing && (
         <div className="space-y-1">
           <p className="text-xs text-sky-300">
-            Transcribing locally on your device: {transcriptionProgress}%
-          </p>
-          <p className="text-xs text-zinc-500">
-            Want instant, hardware-accelerated transcription? Download our native App Store version for a premium experience!
+            Transcribing… {transcriptionProgress}%
           </p>
         </div>
       )}
 
       {transcriptionError && (
         <p className="text-sm text-rose-300">{transcriptionError}</p>
+      )}
+
+      {isOffline && !isTranscribing && (
+        <p className="text-sm text-amber-300">
+          📶 No internet connection. Tap <strong>Transcribe</strong> when you&apos;re back online.
+        </p>
       )}
 
       {audioUrl && (

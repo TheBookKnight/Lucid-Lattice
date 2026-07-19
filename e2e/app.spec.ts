@@ -48,7 +48,7 @@ test.describe("App shell", () => {
     page.on('console', msg => console.log('PAGE LOG:', msg.text()));
     page.on('pageerror', err => console.error('PAGE ERROR:', err.message));
 
-    await page.goto("/");
+    await page.goto("/?test=true");
 
     // Click [Dev] Inject Test Audio button
     const injectBtn = page.locator("#test-inject-audio");

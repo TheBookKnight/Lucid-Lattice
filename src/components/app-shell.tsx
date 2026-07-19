@@ -213,7 +213,7 @@ export function AppShell() {
             onTranscriptReady={(text) => updateDraft("transcript", text)}
           />
 
-          {process.env.NODE_ENV === "development" && (
+          {(process.env.NODE_ENV === "development" || (typeof window !== "undefined" && window.location.search.includes("test=true"))) && (
             <div className="flex justify-end">
               <button
                 type="button"
