@@ -139,4 +139,9 @@ describe("AppShell UI order", () => {
     render(<AppShell />);
     expect(screen.getByText(/tap Transcribe to generate text locally/i)).toBeTruthy();
   });
+
+  it("renders the version badge in the footer", () => {
+    render(<AppShell />);
+    expect(screen.getByTestId("version-display")).toBeInTheDocument();
+  });
 });
