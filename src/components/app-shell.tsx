@@ -6,6 +6,7 @@ import { AnalyticsDashboard } from "@/components/analytics-dashboard";
 import { AudioRecorder } from "@/components/audio-recorder";
 import { EmotionPicker } from "@/components/emotion-picker";
 import { FavoriteButton } from "@/components/favorite-button";
+import { VersionBadge } from "@/components/version-badge";
 import { clearEntries, getEntries, importEntries, saveEntry, toggleFavorite, updateEntry, saveAudioBlob } from "@/lib/db";
 import { emotionSummary, exportCSV, importCSV } from "@/lib/analysis";
 import { useJournalStore } from "@/store/use-journal-store";
@@ -413,6 +414,10 @@ export function AppShell() {
           not proof of precognition, certainty, or medical guidance.
         </p>
       </section>
+
+      <footer className="mt-2 flex flex-col items-center justify-center pb-4 text-center">
+        <VersionBadge />
+      </footer>
     </main>
   );
 }
